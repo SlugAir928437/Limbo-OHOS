@@ -304,6 +304,8 @@ jobs:
             cmake -S "$src" -B "$dir" -G Ninja \
               -DCMAKE_TOOLCHAIN_FILE="$CMAKE_TOOLCHAIN" \
               -DCMAKE_INSTALL_PREFIX="$DEPS" \
+              -DCMAKE_INSTALL_LIBDIR=lib \
+              -DCMAKE_INSTALL_INCLUDEDIR=include \
               -DCMAKE_BUILD_TYPE=Release "$@"
             cmake --build "$dir" -j "$(nproc)"
             cmake --install "$dir"
@@ -312,6 +314,23 @@ jobs:
           # zlib / libffi / pcre2 / glib / pixman
           fetch "zlib-$ZLIB_VERSION" "https://github.com/madler/zlib/releases/download/v${ZLIB_VERSION}/zlib-${ZLIB_VERSION}.tar.gz"
           cmake_build "zlib-$ZLIB_VERSION" -DBUILD_SHARED_LIBS=OFF
+          # 显式写入 zlib.pc，避免 GLib 回退到 CMake 找到宿主 zlib（-I/usr/include）
+          mkdir -p "$DEPS/lib/pkgconfig"
+          cat > "$DEPS/lib/pkgconfig/zlib.pc" <<EOF
+          prefix=$DEPS
+          exec_prefix=\${prefix}
+          libdir=\${prefix}/lib
+          includedir=\${prefix}/include
+          Name: zlib
+          Description: zlib compression library
+          Version: $ZLIB_VERSION
+          Libs: -L\${libdir} -lz
+          Cflags: -I\${includedir}
+          EOF
+          test -f "$DEPS/include/zlib.h"
+          test -f "$DEPS/lib/libz.a"
+          grep -q "Name: zlib" "$DEPS/lib/pkgconfig/zlib.pc"
+          test "$("$BUILD_ROOT/toolchain/ohos-pkg-config" --modversion zlib)" = "$ZLIB_VERSION"
 
           fetch "libffi-$LIBFFI_VERSION" "https://github.com/libffi/libffi/releases/download/v${LIBFFI_VERSION}/libffi-${LIBFFI_VERSION}.tar.gz"
           (
