@@ -498,19 +498,26 @@ jobs:
 
           SDL_LIB=$(find "$BUILD_ROOT/build/sdl2" -name 'libSDL2.so' -print -quit)
           test -n "$SDL_LIB"
+          SDL_INCLUDE="$BUILD_ROOT/src/ohos_sdl2/include"
+          test -f "$SDL_INCLUDE/SDL.h"
+          SDL_CONFIG=$(find "$BUILD_ROOT/build/sdl2" -name 'SDL_config.h' -print -quit)
+          test -n "$SDL_CONFIG"
+          SDL_CONFIG_INCLUDE=$(dirname "$SDL_CONFIG")
+
           echo "SDL_LIB=$SDL_LIB" >> "$GITHUB_ENV"
           echo "SDL_LIBDIR=$(dirname "$SDL_LIB")" >> "$GITHUB_ENV"
-          echo "SDL_INCLUDE=$BUILD_ROOT/src/ohos_sdl2/ohos_sdl2/include" >> "$GITHUB_ENV"
+          echo "SDL_INCLUDE=$SDL_INCLUDE" >> "$GITHUB_ENV"
+          echo "SDL_CONFIG_INCLUDE=$SDL_CONFIG_INCLUDE" >> "$GITHUB_ENV"
 
           cat > "$DEPS/lib/pkgconfig/sdl2.pc" <<EOF
-          prefix=$BUILD_ROOT/src/ohos_sdl2/ohos_sdl2
+          prefix=$BUILD_ROOT/src/ohos_sdl2
           libdir=$(dirname "$SDL_LIB")
-          includedir=$BUILD_ROOT/src/ohos_sdl2/ohos_sdl2/include
+          includedir=$SDL_INCLUDE
           Name: sdl2
           Description: Simple DirectMedia Layer for OpenHarmony
           Version: 2.0.12
           Libs: -L\${libdir} -lSDL2
-          Cflags: -I\${includedir}
+          Cflags: -I\${includedir} -I$SDL_CONFIG_INCLUDE
           EOF
 
       - name: Configure and build QEMU (x86_64 + aarch64, TCG)
@@ -560,7 +567,7 @@ jobs:
                 --cross-prefix="$OHOS_CROSS_PREFIX" \
                 --cc="$CC" --cxx="$CXX" --objcc="$CC" \
                 --host-cc="$(command -v gcc)" \
-                --extra-cflags="--target=$CROSS_TRIPLE --sysroot=$SYSROOT -fPIC -I$DEPS/include -I$SDL_INCLUDE" \
+                --extra-cflags="--target=$CROSS_TRIPLE --sysroot=$SYSROOT -fPIC -I$DEPS/include -I$SDL_INCLUDE -I$SDL_CONFIG_INCLUDE" \
                 --extra-ldflags="--target=$CROSS_TRIPLE --sysroot=$SYSROOT -fuse-ld=lld -L$DEPS/lib -L$SDL_LIBDIR" \
                 --prefix="$BUILD_DIR/install"
               ninja -j "$(nproc)"
