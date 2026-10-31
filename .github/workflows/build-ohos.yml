@@ -1,0 +1,457 @@
+name: Build QEMU for HarmonyOS (TCG + SDL + SPICE + VirGL)
+
+# 为 HarmonyOS Next 版 Limbo 构建进程内 QEMU。
+# 本 workflow 位于 Limbo-OHOS 仓库，构建时 checkout SlugAir928437/QEMU 源码。
+#   - 客户机目标：x86_64-softmmu、aarch64-softmmu
+#   - 加速器：仅 TCG（--disable-kvm；不提供 Gunyah / GZVM）
+#   - 显示：SDL（ohos_sdl2）；不构建 GTK
+#   - 可选栈：SPICE / VirGL / OpenGL
+#   - 不构建 qemu-system-ia64
+# 产物：可在运行时 dlopen 的 libqemu-system-x86_64.so / libqemu-system-aarch64.so
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [master, main]
+    paths:
+      - '.github/workflows/build-ohos.yml'
+
+env:
+  SDK_ROOT: ${{ github.workspace }}/ohos-sdk
+  DEPS: ${{ github.workspace }}/ohos-deps
+  BUILD_ROOT: ${{ github.workspace }}/ohos-build
+  CROSS_TRIPLE: aarch64-unknown-linux-ohos
+  ZLIB_VERSION: '1.3.1'
+  LIBFFI_VERSION: '3.4.6'
+  PCRE2_VERSION: '10.44'
+  GLIB_VERSION: '2.80.5'
+  PIXMAN_VERSION: '0.44.2'
+  OPENSSL_VERSION: '3.0.15'
+  LIBDRM_VERSION: '2.4.123'
+  EPOXY_VERSION: '1.5.10'
+  VIRGL_VERSION: '1.0.1'
+  SPICE_PROTOCOL_VERSION: '0.14.4'
+  SPICE_VERSION: '0.15.2'
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 360
+
+    steps:
+      - name: Checkout Limbo
+        uses: actions/checkout@v4
+
+      - name: Checkout QEMU (SlugAir928437/QEMU)
+        uses: actions/checkout@v4
+        with:
+          repository: SlugAir928437/QEMU
+          path: qemu
+
+      - name: Install host dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential ninja-build meson pkg-config cmake python3 python3-pip \
+            curl ca-certificates xz-utils bzip2 file unzip autoconf automake libtool gettext git
+          python3 -m pip install --upgrade 'meson>=1.3' ninja
+
+      - name: Download HarmonyOS SDK
+        run: |
+          set -euo pipefail
+          mkdir -p "$SDK_ROOT"
+          URLS=(
+            "https://repo.huaweicloud.com/harmonyos/os/6.0-Release/ohos-sdk-windows_linux-public.tar.gz"
+            "https://repo.huaweicloud.com/harmonyos/os/5.1.0-Release/ohos-sdk-windows_linux-public.tar.gz"
+            "https://repo.huaweicloud.com/harmonyos/os/5.0.1-Release/ohos-sdk-windows_linux-public.tar.gz"
+          )
+          for url in "${URLS[@]}"; do
+            echo "trying ${url}"
+            if curl -L --retry 3 --fail -o /tmp/ohos-sdk.tar.gz "$url"; then
+              echo "$url" > "$SDK_ROOT/sdk-url.txt"
+              break
+            fi
+          done
+          test -f /tmp/ohos-sdk.tar.gz
+          tar -xzf /tmp/ohos-sdk.tar.gz -C "$SDK_ROOT"
+          NATIVE_DIR=$(find "$SDK_ROOT" -maxdepth 5 -type d -path '*/native' | head -n 1)
+          test -n "$NATIVE_DIR"
+          echo "OHOS_NDK_HOME=$NATIVE_DIR" >> "$GITHUB_ENV"
+          echo "使用 NDK: $NATIVE_DIR"
+          test -x "$NATIVE_DIR/llvm/bin/${CROSS_TRIPLE}-clang"
+
+      - name: Prepare cross toolchain files
+        run: |
+          set -euo pipefail
+          mkdir -p "$BUILD_ROOT/toolchain" "$DEPS/lib/pkgconfig" "$DEPS/include"
+          NDK="$OHOS_NDK_HOME"
+          SYSROOT="$NDK/sysroot"
+          CC="$NDK/llvm/bin/${CROSS_TRIPLE}-clang"
+          CXX="$NDK/llvm/bin/${CROSS_TRIPLE}-clang++"
+          AR="$NDK/llvm/bin/llvm-ar"
+          RANLIB="$NDK/llvm/bin/llvm-ranlib"
+          NM="$NDK/llvm/bin/llvm-nm"
+          STRIP="$NDK/llvm/bin/llvm-strip"
+          LD="$NDK/llvm/bin/ld.lld"
+
+          # pkg-config 包装：只搜索 staged 前缀与 OHOS sysroot
+          PC_WRAPPER="$BUILD_ROOT/toolchain/ohos-pkg-config"
+          cat > "$PC_WRAPPER" <<EOF
+          #!/bin/sh
+          unset PKG_CONFIG_SYSROOT_DIR PKG_CONFIG_PATH
+          export PKG_CONFIG_LIBDIR="$DEPS/lib/pkgconfig:$SYSROOT/usr/lib/pkgconfig"
+          exec pkg-config "\$@"
+          EOF
+          chmod +x "$PC_WRAPPER"
+
+          cat > "$BUILD_ROOT/toolchain/ohos-meson.ini" <<EOF
+          [binaries]
+          c = '$CC'
+          cpp = '$CXX'
+          ar = '$AR'
+          strip = '$STRIP'
+          pkg-config = '$PC_WRAPPER'
+          ld = '$LD'
+          cmake = 'cmake'
+          python = 'python3'
+
+          [properties]
+          needs_exe_wrapper = true
+
+          [built-in options]
+          c_args = ['--target=$CROSS_TRIPLE', '--sysroot=$SYSROOT', '-fPIC']
+          cpp_args = ['--target=$CROSS_TRIPLE', '--sysroot=$SYSROOT', '-fPIC']
+          c_link_args = ['--target=$CROSS_TRIPLE', '--sysroot=$SYSROOT', '-fuse-ld=lld']
+          cpp_link_args = ['--target=$CROSS_TRIPLE', '--sysroot=$SYSROOT', '-fuse-ld=lld']
+
+          [host_machine]
+          system = 'linux'
+          cpu_family = 'aarch64'
+          cpu = 'aarch64'
+          endian = 'little'
+          EOF
+
+          cat > "$BUILD_ROOT/toolchain/ohos-cmake.cmake" <<EOF
+          set(CMAKE_SYSTEM_NAME Linux)
+          set(CMAKE_SYSTEM_PROCESSOR aarch64)
+          set(CMAKE_SYSROOT "$SYSROOT")
+          set(CMAKE_C_COMPILER "$CC")
+          set(CMAKE_CXX_COMPILER "$CXX")
+          set(CMAKE_C_COMPILER_TARGET "$CROSS_TRIPLE")
+          set(CMAKE_CXX_COMPILER_TARGET "$CROSS_TRIPLE")
+          set(CMAKE_AR "$AR")
+          set(CMAKE_RANLIB "$RANLIB")
+          set(CMAKE_NM "$NM")
+          set(CMAKE_STRIP "$STRIP")
+          set(CMAKE_C_FLAGS_INIT "--target=$CROSS_TRIPLE --sysroot=$SYSROOT -fPIC")
+          set(CMAKE_CXX_FLAGS_INIT "--target=$CROSS_TRIPLE --sysroot=$SYSROOT -fPIC")
+          set(CMAKE_EXE_LINKER_FLAGS_INIT "--target=$CROSS_TRIPLE --sysroot=$SYSROOT -fuse-ld=lld")
+          set(CMAKE_FIND_ROOT_PATH "$DEPS" "$SYSROOT")
+          set(CMAKE_FIND_ROOT_PATH_MODE_PROGRAM NEVER)
+          set(CMAKE_FIND_ROOT_PATH_MODE_LIBRARY ONLY)
+          set(CMAKE_FIND_ROOT_PATH_MODE_INCLUDE ONLY)
+          set(CMAKE_FIND_ROOT_PATH_MODE_PACKAGE ONLY)
+          EOF
+
+          # OHOS 的 EGL / GLES 开发文件不一定带 .pc，补两份最小描述给
+          # libepoxy / virglrenderer / QEMU 使用。
+          for name in egl:EGL/egl.h:EGL:libEGL glesv3:GLES3/gl3.h:GLES3:libGLESv3; do
+            IFS=: read -r pc header incdir libname <<< "$name"
+            cat > "$DEPS/lib/pkgconfig/$pc.pc" <<EOF
+          prefix=$SYSROOT/usr
+          exec_prefix=\${prefix}
+          libdir=$SYSROOT/usr/lib/aarch64-linux-ohos
+          includedir=$SYSROOT/usr/include
+          Name: $pc
+          Description: HarmonyOS $pc
+          Version: 1.0
+          Libs: -L\${libdir} -l${libname#lib}
+          Cflags: -I\${includedir} -I\${includedir}/$incdir
+          EOF
+          done
+
+      - name: Build OHOS dependencies
+        run: |
+          set -euo pipefail
+          NDK="$OHOS_NDK_HOME"
+          SYSROOT="$NDK/sysroot"
+          CC="$NDK/llvm/bin/${CROSS_TRIPLE}-clang"
+          CXX="$NDK/llvm/bin/${CROSS_TRIPLE}-clang++"
+          AR="$NDK/llvm/bin/llvm-ar"
+          RANLIB="$NDK/llvm/bin/llvm-ranlib"
+          NM="$NDK/llvm/bin/llvm-nm"
+          STRIP="$NDK/llvm/bin/llvm-strip"
+          MESON_CROSS="$BUILD_ROOT/toolchain/ohos-meson.ini"
+          CMAKE_TOOLCHAIN="$BUILD_ROOT/toolchain/ohos-cmake.cmake"
+          export PKG_CONFIG_LIBDIR="$DEPS/lib/pkgconfig:$SYSROOT/usr/lib/pkgconfig"
+          export PKG_CONFIG_PATH=
+
+          fetch() {
+            local name="$1" url="$2"
+            local file="/tmp/${name}.tar.gz"
+            if [ ! -d "$BUILD_ROOT/src/$name" ]; then
+              mkdir -p "$BUILD_ROOT/src"
+              curl -L --retry 3 --fail -o "$file" "$url"
+              mkdir -p "$BUILD_ROOT/src/$name"
+              tar -xf "$file" -C "$BUILD_ROOT/src/$name" --strip-components=1
+            fi
+          }
+
+          meson_build() {
+            local name="$1"; shift
+            local src="$BUILD_ROOT/src/$name"
+            local dir="$BUILD_ROOT/build/$name"
+            rm -rf "$dir"
+            meson setup "$dir" "$src" \
+              --cross-file "$MESON_CROSS" \
+              --prefix "$DEPS" --libdir lib \
+              --buildtype release --default-library static \
+              --wrap-mode=nodownload "$@"
+            ninja -C "$dir"
+            ninja -C "$dir" install
+          }
+
+          cmake_build() {
+            local name="$1"; shift
+            local src="$BUILD_ROOT/src/$name"
+            local dir="$BUILD_ROOT/build/$name"
+            rm -rf "$dir"
+            cmake -S "$src" -B "$dir" -G Ninja \
+              -DCMAKE_TOOLCHAIN_FILE="$CMAKE_TOOLCHAIN" \
+              -DCMAKE_INSTALL_PREFIX="$DEPS" \
+              -DCMAKE_BUILD_TYPE=Release "$@"
+            cmake --build "$dir" -j "$(nproc)"
+            cmake --install "$dir"
+          }
+
+          # zlib / libffi / pcre2 / glib / pixman
+          fetch "zlib-$ZLIB_VERSION" "https://github.com/madler/zlib/releases/download/v${ZLIB_VERSION}/zlib-${ZLIB_VERSION}.tar.gz"
+          cmake_build "zlib-$ZLIB_VERSION" -DBUILD_SHARED_LIBS=OFF
+
+          fetch "libffi-$LIBFFI_VERSION" "https://github.com/libffi/libffi/releases/download/v${LIBFFI_VERSION}/libffi-${LIBFFI_VERSION}.tar.gz"
+          (
+            cd "$BUILD_ROOT/src/libffi-$LIBFFI_VERSION"
+            ./configure --host=aarch64-linux-gnu --prefix="$DEPS" \
+              --enable-static --disable-shared --disable-docs \
+              CC="$CC" CXX="$CXX" AR="$AR" RANLIB="$RANLIB" \
+              CFLAGS="--target=$CROSS_TRIPLE --sysroot=$SYSROOT -fPIC" \
+              LDFLAGS="--target=$CROSS_TRIPLE --sysroot=$SYSROOT -fuse-ld=lld"
+            make -j "$(nproc)"
+            make install
+          )
+
+          fetch "pcre2-$PCRE2_VERSION" "https://github.com/PCRE2Project/pcre2/releases/download/pcre2-${PCRE2_VERSION}/pcre2-${PCRE2_VERSION}.tar.gz"
+          cmake_build "pcre2-$PCRE2_VERSION" \
+            -DBUILD_SHARED_LIBS=OFF \
+            -DPCRE2_BUILD_PCRE2_16=OFF -DPCRE2_BUILD_PCRE2_32=OFF \
+            -DPCRE2_BUILD_TESTS=OFF -DPCRE2_BUILD_PCRE2GREP=OFF \
+            -DPCRE2_SUPPORT_JIT=OFF
+
+          # GLib 只提供 .tar.xz 发布包
+          if [ ! -d "$BUILD_ROOT/src/glib-$GLIB_VERSION" ]; then
+            curl -L --retry 3 --fail -o /tmp/glib.tar.xz "https://download.gnome.org/sources/glib/2.80/glib-${GLIB_VERSION}.tar.xz"
+            mkdir -p "$BUILD_ROOT/src/glib-$GLIB_VERSION"
+            tar -xJf /tmp/glib.tar.xz -C "$BUILD_ROOT/src/glib-$GLIB_VERSION" --strip-components=1
+          fi
+          meson_build "glib-$GLIB_VERSION" \
+            -Dtests=false -Dinstalled_tests=false \
+            -Dintrospection=disabled -Dsysprof=disabled \
+            -Ddocumentation=false -Dman-pages=disabled \
+            -Dselinux=disabled -Dxattr=false -Dlibmount=disabled -Dlibelf=disabled \
+            -Dnls=disabled -Dglib_debug=disabled -Dglib_assert=false -Dglib_checks=false
+
+          fetch "pixman-$PIXMAN_VERSION" "https://cairographics.org/releases/pixman-${PIXMAN_VERSION}.tar.gz"
+          meson_build "pixman-$PIXMAN_VERSION" \
+            -Dgtk=disabled -Dlibpng=disabled -Dtests=disabled -Ddemos=disabled \
+            -Dopenmp=disabled -Dgnuplot=false -Dtimers=false
+
+          # OpenSSL（SPICE 需要）
+          fetch "openssl-$OPENSSL_VERSION" "https://www.openssl.org/source/openssl-${OPENSSL_VERSION}.tar.gz"
+          (
+            cd "$BUILD_ROOT/src/openssl-$OPENSSL_VERSION"
+            ./Configure linux-aarch64 --prefix="$DEPS" --openssldir="$DEPS/ssl" \
+              no-shared no-tests no-docs -fPIC \
+              CC="$CC" CXX="$CXX" AR="$AR" RANLIB="$RANLIB" NM="$NM"
+            make -j "$(nproc)"
+            make install_sw
+          )
+
+          # libdrm / libepoxy / virglrenderer
+          if [ ! -d "$BUILD_ROOT/src/libdrm-$LIBDRM_VERSION" ]; then
+            curl -L --retry 3 --fail -o /tmp/libdrm.tar.xz "https://dri.freedesktop.org/libdrm/libdrm-${LIBDRM_VERSION}.tar.xz"
+            mkdir -p "$BUILD_ROOT/src/libdrm-$LIBDRM_VERSION"
+            tar -xJf /tmp/libdrm.tar.xz -C "$BUILD_ROOT/src/libdrm-$LIBDRM_VERSION" --strip-components=1
+          fi
+          meson_build "libdrm-$LIBDRM_VERSION" \
+            -Dtests=false -Dman-pages=disabled -Dvalgrind=disabled \
+            -Dradeon=disabled -Damdgpu=disabled -Dnouveau=disabled \
+            -Dvmwgfx=disabled -Dintel=disabled -Detnaviv=disabled -Dvc4=disabled
+
+          fetch "libepoxy-$EPOXY_VERSION" "https://github.com/anholt/libepoxy/releases/download/${EPOXY_VERSION}/libepoxy-${EPOXY_VERSION}.tar.gz"
+          meson_build "libepoxy-$EPOXY_VERSION" -Dtests=false -Ddocs=false
+
+          fetch "virglrenderer-$VIRGL_VERSION" "https://gitlab.freedesktop.org/virgl/virglrenderer/-/archive/${VIRGL_VERSION}/virglrenderer-${VIRGL_VERSION}.tar.gz"
+          meson_build "virglrenderer-$VIRGL_VERSION" \
+            -Dvenus=disabled -Dtests=false -Dminigbm_allocation=disabled
+
+          # SPICE
+          fetch "spice-protocol-$SPICE_PROTOCOL_VERSION" "https://gitlab.freedesktop.org/spice/spice-protocol/-/archive/v${SPICE_PROTOCOL_VERSION}/spice-protocol-v${SPICE_PROTOCOL_VERSION}.tar.gz"
+          meson_build "spice-protocol-$SPICE_PROTOCOL_VERSION"
+
+          fetch "spice-$SPICE_VERSION" "https://gitlab.freedesktop.org/spice/spice/-/archive/v${SPICE_VERSION}/spice-v${SPICE_VERSION}.tar.gz"
+          meson_build "spice-$SPICE_VERSION" \
+            -Dtests=false -Dclient=disabled -Dgui=disabled \
+            -Dopus=disabled -Dcelt051=disabled -Dsasl=disabled \
+            -Dsmartcard=disabled -Dlz4=disabled
+
+      - name: Build SDL2 (ohos_sdl2)
+        run: |
+          set -euo pipefail
+          NDK="$OHOS_NDK_HOME"
+          SYSROOT="$NDK/sysroot"
+          CMAKE_TOOLCHAIN="$BUILD_ROOT/toolchain/ohos-cmake.cmake"
+
+          if [ ! -d "$BUILD_ROOT/src/ohos_sdl2" ]; then
+            git clone --depth 1 https://gitcode.com/CPF-ApplicationTPC/ohos_sdl2.git "$BUILD_ROOT/src/ohos_sdl2"
+          fi
+
+          rm -rf "$BUILD_ROOT/build/sdl2"
+          cmake -S "$BUILD_ROOT/src/ohos_sdl2/ohos-project/entry/src/main/cpp" \
+            -B "$BUILD_ROOT/build/sdl2" -G Ninja \
+            -DCMAKE_TOOLCHAIN_FILE="$CMAKE_TOOLCHAIN" \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DOHOS_ARCH=arm64-v8a -DOHOS_PLATFORM=OHOS
+          cmake --build "$BUILD_ROOT/build/sdl2" --target SDL2 -j "$(nproc)"
+
+          SDL_LIB=$(find "$BUILD_ROOT/build/sdl2" -name 'libSDL2.so' | head -n 1)
+          test -n "$SDL_LIB"
+          echo "SDL_LIB=$SDL_LIB" >> "$GITHUB_ENV"
+          echo "SDL_LIBDIR=$(dirname "$SDL_LIB")" >> "$GITHUB_ENV"
+          echo "SDL_INCLUDE=$BUILD_ROOT/src/ohos_sdl2/ohos_sdl2/include" >> "$GITHUB_ENV"
+
+          cat > "$DEPS/lib/pkgconfig/sdl2.pc" <<EOF
+          prefix=$BUILD_ROOT/src/ohos_sdl2/ohos_sdl2
+          libdir=$(dirname "$SDL_LIB")
+          includedir=$BUILD_ROOT/src/ohos_sdl2/ohos_sdl2/include
+          Name: sdl2
+          Description: Simple DirectMedia Layer for OpenHarmony
+          Version: 2.0.12
+          Libs: -L\${libdir} -lSDL2
+          Cflags: -I\${includedir}
+          EOF
+
+      - name: Configure and build QEMU (x86_64 + aarch64, TCG)
+        run: |
+          set -euo pipefail
+          NDK="$OHOS_NDK_HOME"
+          SYSROOT="$NDK/sysroot"
+          CC="$NDK/llvm/bin/${CROSS_TRIPLE}-clang"
+          CXX="$NDK/llvm/bin/${CROSS_TRIPLE}-clang++"
+          AR="$NDK/llvm/bin/llvm-ar"
+          RANLIB="$NDK/llvm/bin/llvm-ranlib"
+          NM="$NDK/llvm/bin/llvm-nm"
+          STRIP="$NDK/llvm/bin/llvm-strip"
+          export PKG_CONFIG_LIBDIR="$DEPS/lib/pkgconfig:$SYSROOT/usr/lib/pkgconfig"
+          export PKG_CONFIG_PATH=
+
+          for TARGET in x86_64-softmmu aarch64-softmmu; do
+            BUILD_DIR="$BUILD_ROOT/qemu-$TARGET"
+            rm -rf "$BUILD_DIR"
+            mkdir -p "$BUILD_DIR"
+            (
+              cd "$BUILD_DIR"
+              "${GITHUB_WORKSPACE}/qemu/configure" \
+                --target-list="$TARGET" \
+                --enable-tcg \
+                --enable-sdl \
+                --enable-spice \
+                --enable-virglrenderer \
+                --enable-opengl \
+                --disable-gtk \
+                --disable-kvm \
+                --disable-hvf \
+                --disable-whpx \
+                --disable-xen \
+                --disable-docs \
+                --disable-tools \
+                --disable-guest-agent \
+                --disable-werror \
+                --cross-prefix="${CROSS_TRIPLE}-" \
+                --cc="$CC" --cxx="$CXX" --objcc="$CC" \
+                --ar="$AR" --nm="$NM" --ranlib="$RANLIB" --strip="$STRIP" \
+                --host-cc="$(command -v gcc)" \
+                --extra-cflags="--target=$CROSS_TRIPLE --sysroot=$SYSROOT -fPIC -I$DEPS/include -I$SDL_INCLUDE" \
+                --extra-ldflags="--target=$CROSS_TRIPLE --sysroot=$SYSROOT -fuse-ld=lld -L$DEPS/lib -L$SDL_LIBDIR" \
+                --prefix="$BUILD_DIR/install"
+              ninja -j "$(nproc)"
+            )
+          done
+
+      - name: Link dlopen-able shared libraries
+        run: |
+          set -euo pipefail
+          NDK="$OHOS_NDK_HOME"
+          SYSROOT="$NDK/sysroot"
+          CC="$NDK/llvm/bin/${CROSS_TRIPLE}-clang"
+          mkdir -p "$GITHUB_WORKSPACE/dist"
+
+          for TARGET in x86_64-softmmu aarch64-softmmu; do
+            GUEST="${TARGET%-softmmu}"
+            BUILD_DIR="$BUILD_ROOT/qemu-$TARGET"
+            OBJS="/tmp/objs-$GUEST.txt"
+
+            # 收集该目标的全部对象文件，排除 main 与测试/桩代码
+            find "$BUILD_DIR" -name '*.o' -type f \
+              | grep -v 'system_main.c.o' \
+              | grep -v '/tests/' \
+              | grep -v '/test/' \
+              | grep -v 'stubs_' \
+              > "$OBJS"
+
+            "$CC" -shared -fPIC \
+              --target="$CROSS_TRIPLE" --sysroot="$SYSROOT" -fuse-ld=lld \
+              -o "$GITHUB_WORKSPACE/dist/libqemu-system-$GUEST.so" \
+              @"$OBJS" \
+              -L"$DEPS/lib" -L"$SDL_LIBDIR" \
+              -L"$BUILD_DIR/subprojects/slirp" \
+              -L"$BUILD_DIR/subprojects/dtc/libfdt" \
+              -Wl,--start-group \
+              -lglib-2.0 -lgobject-2.0 -lgio-2.0 -lgmodule-2.0 \
+              -lpixman-1 -lpcre2-8 -lffi \
+              -lspice-server -lvirglrenderer -lepoxy -ldrm \
+              -lssl -lcrypto -lSDL2 \
+              -lslirp -lfdt \
+              -Wl,--end-group \
+              -lEGL -lGLESv3 -lz -lm -lpthread -ldl \
+              -Wl,--allow-shlib-undefined \
+              -Wl,-soname,libqemu-system-$GUEST.so
+
+            file "$GITHUB_WORKSPACE/dist/libqemu-system-$GUEST.so"
+            "$NDK/llvm/bin/llvm-nm" -D "$GITHUB_WORKSPACE/dist/libqemu-system-$GUEST.so" \
+              | grep -E ' (qemu_init|qemu_main_loop|qemu_cleanup)$' || {
+                echo "缺少 qemu_init/qemu_main_loop/qemu_cleanup 导出" >&2
+                exit 1
+              }
+          done
+
+      - name: Package artifacts
+        run: |
+          set -euo pipefail
+          mkdir -p dist/pkgconfig
+          cp "$DEPS/lib/pkgconfig/"*.pc dist/pkgconfig/ || true
+          # Limbo 运行时同时需要 SDL2 的 N-API 库
+          cp "$SDL_LIB" dist/libSDL2.so
+          tar -czf qemu-ohos-arm64-tcg.tar.gz -C dist .
+          ls -lh dist qemu-ohos-arm64-tcg.tar.gz
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: qemu-ohos-arm64-tcg
+          path: |
+            dist/libqemu-system-*.so
+            dist/libSDL2.so
+            dist/pkgconfig
+            qemu-ohos-arm64-tcg.tar.gz
+          if-no-files-found: error
+          retention-days: 14
