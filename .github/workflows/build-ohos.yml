@@ -551,7 +551,6 @@ jobs:
                 --disable-werror \
                 -Dvhost_user=disabled \
                 -Dvhost_user_blk_server=disabled \
-                -Dlibvhost_user=disabled \
                 -Dvhost_vdpa=disabled \
                 -Dlibvduse=disabled \
                 -Dvduse_blk_export=disabled \
