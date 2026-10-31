@@ -549,6 +549,14 @@ jobs:
                 --disable-tools \
                 --disable-guest-agent \
                 --disable-werror \
+                -Dvhost_user=disabled \
+                -Dvhost_user_blk_server=disabled \
+                -Dlibvhost_user=disabled \
+                -Dvhost_vdpa=disabled \
+                -Dlibvduse=disabled \
+                -Dvduse_blk_export=disabled \
+                -Dvhost_net=disabled \
+                -Dvhost_kernel=disabled \
                 --cross-prefix="$OHOS_CROSS_PREFIX" \
                 --cc="$CC" --cxx="$CXX" --objcc="$CC" \
                 --host-cc="$(command -v gcc)" \
