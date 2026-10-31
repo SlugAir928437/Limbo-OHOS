@@ -564,6 +564,8 @@ jobs:
                 -Dvhost_net=disabled \
                 -Dvhost_kernel=disabled \
                 -Dkeyring=disabled \
+                -Dgzvm=disabled \
+                -Dgunyah=disabled \
                 --cross-prefix="$OHOS_CROSS_PREFIX" \
                 --cc="$CC" --cxx="$CXX" --objcc="$CC" \
                 --host-cc="$(command -v gcc)" \
