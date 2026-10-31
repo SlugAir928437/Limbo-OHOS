@@ -28,6 +28,7 @@ env:
   GLIB_VERSION: '2.80.5'
   PIXMAN_VERSION: '0.44.2'
   OPENSSL_VERSION: '3.0.15'
+  JPEG_VERSION: '3.0.4'
   LIBDRM_VERSION: '2.4.123'
   EPOXY_VERSION: '1.5.10'
   VIRGL_VERSION: '1.0.1'
@@ -380,6 +381,25 @@ jobs:
             make install_sw
           )
 
+          # libjpeg-turbo（SPICE 的 MJPEG 编码需要）
+          fetch "libjpeg-turbo-$JPEG_VERSION" "https://github.com/libjpeg-turbo/libjpeg-turbo/archive/refs/tags/${JPEG_VERSION}.tar.gz"
+          cmake_build "libjpeg-turbo-$JPEG_VERSION" \
+            -DENABLE_SHARED=OFF -DENABLE_STATIC=ON \
+            -DWITH_SIMD=OFF -DWITH_TURBOJPEG=OFF
+          cat > "$DEPS/lib/pkgconfig/libjpeg.pc" <<EOF
+          prefix=$DEPS
+          exec_prefix=\${prefix}
+          libdir=\${prefix}/lib
+          includedir=\${prefix}/include
+          Name: libjpeg
+          Description: JPEG image codec
+          Version: $JPEG_VERSION
+          Libs: -L\${libdir} -ljpeg
+          Cflags: -I\${includedir}
+          EOF
+          test -f "$DEPS/lib/pkgconfig/libjpeg.pc"
+          test -f "$DEPS/lib/libjpeg.a"
+
           # libdrm / libepoxy / virglrenderer
           if [ ! -d "$BUILD_ROOT/src/libdrm-$LIBDRM_VERSION" ]; then
             curl -L --retry 3 --fail -o /tmp/libdrm.tar.xz "https://dri.freedesktop.org/libdrm/libdrm-${LIBDRM_VERSION}.tar.xz"
@@ -551,7 +571,7 @@ jobs:
               -lglib-2.0 -lgobject-2.0 -lgio-2.0 -lgmodule-2.0 \
               -lpixman-1 -lpcre2-8 -lffi \
               -lspice-server -lvirglrenderer -lepoxy -ldrm \
-              -lssl -lcrypto -lSDL2 \
+              -ljpeg -lssl -lcrypto -lSDL2 \
               -lslirp -lfdt \
               -Wl,--end-group \
               -lEGL -lGLESv3 -lz -lm -lpthread -ldl \
