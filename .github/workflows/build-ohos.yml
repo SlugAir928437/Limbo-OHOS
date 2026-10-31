@@ -7,7 +7,8 @@ name: Build QEMU for HarmonyOS (TCG + SDL + SPICE + VirGL)
 #   - 显示：SDL（ohos_sdl2）；不构建 GTK
 #   - 可选栈：SPICE / VirGL / OpenGL
 #   - 不构建 qemu-system-ia64
-#   - 随后把原生库打进 entry/libs 并用 hvigor 构建 unsigned HAP
+#   - 随后把原生库打进 entry/libs，用 harmonyos-ci 的 API 26 command-line-tools
+#     镜像（ghcr.io/dalongzhuazi/harmonyos-ci:api26r）构建 unsigned HAP
 # 产物：可在运行时 dlopen 的 libqemu-system-x86_64.so / libqemu-system-aarch64.so
 
 on:
@@ -682,6 +683,25 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
+  # HAP 构建使用 harmonyos-ci 的 command-line-tools 镜像（API 26 正式版），
+  # 公共 OpenHarmony SDK 没有 hms / API 26，无法满足本工程配置。
+  # https://github.com/DaLongZhuaZi/harmonyos-ci
+  hap:
+    name: Build unsigned HAP
+    needs: build
+    runs-on: ubuntu-22.04
+    container:
+      image: ghcr.io/dalongzhuazi/harmonyos-ci:api26r
+    steps:
+      - name: Checkout Limbo
+        uses: actions/checkout@v4
+
+      - name: Download native libraries
+        uses: actions/download-artifact@v4
+        with:
+          name: qemu-ohos-arm64-tcg
+          path: dist
+
       - name: Stage native libraries for HAP
         run: |
           set -euo pipefail
@@ -691,43 +711,7 @@ jobs:
           cp dist/libSDL2.so entry/libs/arm64-v8a/
           ls -lh entry/libs/arm64-v8a
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-
-      - name: Install hvigor
-        run: |
-          set -euo pipefail
-          npm config set registry https://repo.harmonyos.com/npm/
-          npm install --no-save --no-package-lock \
-            @ohos/hvigor@6.26.9 @ohos/hvigor-ohos-plugin@6.26.9
-          HVIGOR_JS="$(find node_modules/@ohos/hvigor -maxdepth 3 -name hvigor.js -print -quit)"
-          test -n "$HVIGOR_JS"
-          echo "HVIGOR_JS=$HVIGOR_JS" >> "$GITHUB_ENV"
-          echo "HVIGOR_USER_HOME=$GITHUB_WORKSPACE/.hvigor-user" >> "$GITHUB_ENV"
-
-      - name: Prepare SDK and module links
-        run: |
-          set -euo pipefail
-          SDK_HOME="$GITHUB_WORKSPACE/deveco-sdk"
-          SDK_LINUX="$(dirname "$OHOS_NDK_HOME")"
-          mkdir -p "$SDK_HOME/default"
-          ln -sfn "$SDK_LINUX" "$SDK_HOME/default/openharmony"
-          if [ -d "$SDK_LINUX/hms" ]; then
-            ln -sfn "$SDK_LINUX/hms" "$SDK_HOME/default/hms"
-          fi
-          echo "DEVECO_SDK_HOME=$SDK_HOME" >> "$GITHUB_ENV"
-          echo "sdk.dir=$SDK_HOME" > local.properties
-
-          # 没有 ohpm 时手动建立本地 N-API 类型包链接
-          mkdir -p oh_modules entry/oh_modules
-          for dir in oh_modules entry/oh_modules; do
-            ln -sfn "$GITHUB_WORKSPACE/entry/src/main/cpp/types/liblimbo" "$dir/liblimbo.so"
-            ln -sfn "$GITHUB_WORKSPACE/entry/src/main/cpp/types/libSDL2" "$dir/libSDL2.so"
-          done
-
-      - name: Build HAP (unsigned)
+      - name: Strip machine-local signing and test deps
         run: |
           set -euo pipefail
           # 测试依赖在 CI 不安装；assembleHap 不需要它们
@@ -748,12 +732,18 @@ jobs:
           p.write_text(text, encoding='utf-8')
           PY
 
-          node "$HVIGOR_JS" assembleHap \
+      - name: Install dependencies
+        run: ohpm install --all
+
+      - name: Build HAP (unsigned)
+        run: |
+          hvigorw assembleHap \
             --mode module \
             -p product=default \
             -p module=entry@default \
             -p buildMode=debug \
-            --no-daemon
+            --no-daemon \
+            --stacktrace
 
       - name: Collect HAP
         run: |
@@ -761,6 +751,7 @@ jobs:
           mkdir -p dist/hap
           find entry/build -name '*.hap' -exec cp -v {} dist/hap/ \;
           ls -lh dist/hap
+          test -n "$(ls -A dist/hap)"
 
       - name: Upload HAP
         uses: actions/upload-artifact@v4
