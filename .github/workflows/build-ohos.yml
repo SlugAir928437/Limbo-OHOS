@@ -534,47 +534,46 @@ jobs:
           export PKG_CONFIG_LIBDIR="$DEPS/lib/pkgconfig:$DEPS/share/pkgconfig"
           export PKG_CONFIG_PATH=
 
-          for TARGET in x86_64-softmmu aarch64-softmmu; do
-            BUILD_DIR="$BUILD_ROOT/qemu-$TARGET"
-            rm -rf "$BUILD_DIR"
-            mkdir -p "$BUILD_DIR"
-            (
-              cd "$BUILD_DIR"
-              "${GITHUB_WORKSPACE}/qemu/configure" \
-                --target-list="$TARGET" \
-                --enable-tcg \
-                --enable-sdl \
-                --enable-spice \
-                --enable-virglrenderer \
-                --enable-opengl \
-                --disable-gtk \
-                --disable-kvm \
-                --disable-hvf \
-                --disable-whpx \
-                --disable-xen \
-                --disable-docs \
-                --disable-tools \
-                --disable-guest-agent \
-                --disable-werror \
-                -Dvhost_user=disabled \
-                -Dvhost_user_blk_server=disabled \
-                -Dvhost_vdpa=disabled \
-                -Dlibvduse=disabled \
-                -Dvduse_blk_export=disabled \
-                -Dvhost_net=disabled \
-                -Dvhost_kernel=disabled \
-                -Dkeyring=disabled \
-                -Dgzvm=disabled \
-                -Dgunyah=disabled \
-                --cross-prefix="$OHOS_CROSS_PREFIX" \
-                --cc="$CC" --cxx="$CXX" --objcc="$CC" \
-                --host-cc="$(command -v gcc)" \
-                --extra-cflags="--target=$CROSS_TRIPLE --sysroot=$SYSROOT -fPIC -I$DEPS/include -I$SDL_INCLUDE -I$SDL_CONFIG_INCLUDE" \
-                --extra-ldflags="--target=$CROSS_TRIPLE --sysroot=$SYSROOT -fuse-ld=lld -L$DEPS/lib -L$SDL_LIBDIR $NDK/llvm/lib/aarch64-linux-ohos/libc++.a $NDK/llvm/lib/aarch64-linux-ohos/libc++abi.a $NDK/llvm/lib/aarch64-linux-ohos/libunwind.a" \
-                --prefix="$BUILD_DIR/install"
-              ninja -j "$(nproc)"
-            )
-          done
+          # 两个 softmmu 目标在同一次 configure/ninja 中构建（共享 libqemuutil 等公共对象）
+          BUILD_DIR="$BUILD_ROOT/qemu"
+          rm -rf "$BUILD_DIR"
+          mkdir -p "$BUILD_DIR"
+          (
+            cd "$BUILD_DIR"
+            "${GITHUB_WORKSPACE}/qemu/configure" \
+              --target-list="x86_64-softmmu,aarch64-softmmu" \
+              --enable-tcg \
+              --enable-sdl \
+              --enable-spice \
+              --enable-virglrenderer \
+              --enable-opengl \
+              --disable-gtk \
+              --disable-kvm \
+              --disable-hvf \
+              --disable-whpx \
+              --disable-xen \
+              --disable-docs \
+              --disable-tools \
+              --disable-guest-agent \
+              --disable-werror \
+              -Dvhost_user=disabled \
+              -Dvhost_user_blk_server=disabled \
+              -Dvhost_vdpa=disabled \
+              -Dlibvduse=disabled \
+              -Dvduse_blk_export=disabled \
+              -Dvhost_net=disabled \
+              -Dvhost_kernel=disabled \
+              -Dkeyring=disabled \
+              -Dgzvm=disabled \
+              -Dgunyah=disabled \
+              --cross-prefix="$OHOS_CROSS_PREFIX" \
+              --cc="$CC" --cxx="$CXX" --objcc="$CC" \
+              --host-cc="$(command -v gcc)" \
+              --extra-cflags="--target=$CROSS_TRIPLE --sysroot=$SYSROOT -fPIC -I$DEPS/include -I$SDL_INCLUDE -I$SDL_CONFIG_INCLUDE" \
+              --extra-ldflags="--target=$CROSS_TRIPLE --sysroot=$SYSROOT -fuse-ld=lld -L$DEPS/lib -L$SDL_LIBDIR $NDK/llvm/lib/aarch64-linux-ohos/libc++.a $NDK/llvm/lib/aarch64-linux-ohos/libc++abi.a $NDK/llvm/lib/aarch64-linux-ohos/libunwind.a" \
+              --prefix="$BUILD_DIR/install"
+            ninja -j "$(nproc)"
+          )
 
       - name: Link dlopen-able shared libraries
         run: |
@@ -584,9 +583,24 @@ jobs:
           CC="$OHOS_LLVM_BIN/${CROSS_TRIPLE}-clang"
           mkdir -p "$GITHUB_WORKSPACE/dist"
 
+          BUILD_DIR="$BUILD_ROOT/qemu"
+          COMMON_OBJS="/tmp/objs-common.txt"
+
+          # 公共对象（libqemuutil、subprojects 等），排除两个目标各自的对象目录与可执行文件目录
+          find "$BUILD_DIR" -name '*.o' -type f \
+            | grep -v '/libqemu-x86_64-softmmu\.a\.p/' \
+            | grep -v '/libqemu-aarch64-softmmu\.a\.p/' \
+            | grep -v '/qemu-system-x86_64\.p/' \
+            | grep -v '/qemu-system-aarch64\.p/' \
+            | grep -v 'system_main.c.o' \
+            | grep -v '/tests/' \
+            | grep -v '/test/' \
+            | grep -v 'stubs_' \
+            > "$COMMON_OBJS"
+          echo "common objects: $(wc -l < "$COMMON_OBJS")"
+
           for TARGET in x86_64-softmmu aarch64-softmmu; do
             GUEST="${TARGET%-softmmu}"
-            BUILD_DIR="$BUILD_ROOT/qemu-$TARGET"
             OBJS="/tmp/objs-$GUEST.txt"
 
             # QEMU 子项目库的实际路径随 Meson 配置变化，直接查找
@@ -598,13 +612,14 @@ jobs:
             echo "slirp: ${SLIRP_LIB:-none}"
             echo "fdt: ${FDT_LIB:-none}"
 
-            # 收集该目标的全部对象文件，排除 main 与测试/桩代码
-            find "$BUILD_DIR" -name '*.o' -type f \
-              | grep -v 'system_main.c.o' \
-              | grep -v '/tests/' \
-              | grep -v '/test/' \
-              | grep -v 'stubs_' \
-              > "$OBJS"
+            # 该客户机专属对象 + 公共对象
+            {
+              find "$BUILD_DIR" -path "*/libqemu-$GUEST-softmmu.a.p/*" -name '*.o' -type f
+              find "$BUILD_DIR" -path "*/qemu-system-$GUEST.p/*" -name '*.o' -type f \
+                | grep -v 'main\.c\.o' || true
+              cat "$COMMON_OBJS"
+            } > "$OBJS"
+            echo "$GUEST objects: $(wc -l < "$OBJS")"
 
             "$CC" -shared -fPIC \
               --target="$CROSS_TRIPLE" --sysroot="$SYSROOT" -fuse-ld=lld \
