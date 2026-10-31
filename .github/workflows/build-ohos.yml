@@ -472,6 +472,11 @@ jobs:
             -Dgstreamer=no -Dlz4=false -Dsasl=false \
             -Dopus=disabled -Dsmartcard=disabled -Dinstrumentation=no \
             -Dspice-common:python-checks=false
+          # 源码包没有 .git，spice 的 meson 版本会变成 UNKNOWN，QEMU 要求 >=0.15.0
+          SPICE_PC="$(find "$DEPS" -name 'spice-server.pc' -print -quit)"
+          test -n "$SPICE_PC"
+          sed -i "s/^Version:.*/Version: $SPICE_VERSION/" "$SPICE_PC"
+          grep -q "^Version: $SPICE_VERSION" "$SPICE_PC"
 
       - name: Build SDL2 (ohos_sdl2)
         run: |
