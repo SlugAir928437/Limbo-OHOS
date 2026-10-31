@@ -69,7 +69,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ohos-sdk
-          key: ohos-sdk-6.0-Release-v2
+          key: ohos-sdk-6.0-Release-v3
 
       - name: Download HarmonyOS SDK
         if: steps.sdk-cache.outputs.cache-hit != 'true'
@@ -104,17 +104,34 @@ jobs:
             unzip -q -o "$zip" -d "$LINUX_DIR"
             rm -f "$zip"
           done
+          ls -la "$LINUX_DIR" | sed -n '1,40p'
+          if [ ! -d "$LINUX_DIR/native/llvm/bin" ]; then
+            echo "解压后仍未找到 linux/native/llvm/bin，SDK 目录树：" >&2
+            find "$SDK_ROOT" -maxdepth 4 -type d -print | sed -n '1,80p' >&2
+            exit 1
+          fi
           du -sh "$SDK_ROOT"
 
       - name: Locate HarmonyOS NDK
         run: |
           set -euo pipefail
+          # 缓存或旧流程可能留下未解压的组件 zip，这里补一次
+          while IFS= read -r -d '' zip; do
+            echo "unzip cached component $(basename "$zip")"
+            unzip -q -o "$zip" -d "$(dirname "$zip")"
+            rm -f "$zip"
+          done < <(find "$SDK_ROOT" -type f -name '*.zip' -path '*/linux/*' -print0)
+
           # 优先 linux/native（包里同时含 windows/native）
           NDK="$(find "$SDK_ROOT" -type d -path '*/linux/native' -print -quit)"
           if [ -z "$NDK" ]; then
             NDK="$(find "$SDK_ROOT" -type d -name native -print -quit)"
           fi
-          test -n "$NDK"
+          if [ -z "$NDK" ]; then
+            echo "未找到 NDK，SDK 目录树：" >&2
+            find "$SDK_ROOT" -maxdepth 5 -type d -print | sed -n '1,120p' >&2
+            exit 1
+          fi
           test -d "$NDK/llvm/bin"
           test -d "$NDK/sysroot"
           echo "OHOS_NDK_HOME=$NDK" >> "$GITHUB_ENV"
