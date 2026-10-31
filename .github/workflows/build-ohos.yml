@@ -193,6 +193,9 @@ jobs:
           exec pkg-config "\$@"
           EOF
           chmod +x "$PC_WRAPPER"
+          # QEMU/Meson 会按 cross-prefix 查找 <triple>-pkg-config
+          CROSS_BIN_DIR="$(dirname "$OHOS_CROSS_PREFIX")"
+          ln -sf "$PC_WRAPPER" "$CROSS_BIN_DIR/${CROSS_TRIPLE}-pkg-config"
 
           cat > "$BUILD_ROOT/toolchain/ohos-meson.ini" <<EOF
           [binaries]
