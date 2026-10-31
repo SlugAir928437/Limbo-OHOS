@@ -703,11 +703,13 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: qemu-ohos-arm64-tcg
-          path: dist
+          # 产物 artifact 内含 dist/ 前缀（上传时公共父目录是 workspace 根）
+          path: .
 
       - name: Stage native libraries for HAP
         run: |
           set -euo pipefail
+          find . -maxdepth 3 -name 'libqemu-system-*.so' -o -maxdepth 3 -name 'libSDL2.so'
           mkdir -p entry/libs/arm64-v8a
           cp dist/libqemu-system-x86_64.so entry/libs/arm64-v8a/
           cp dist/libqemu-system-aarch64.so entry/libs/arm64-v8a/
