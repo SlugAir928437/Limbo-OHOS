@@ -17,6 +17,12 @@ on:
     branches: [master, main]
     paths:
       - '.github/workflows/build-ohos.yml'
+      - 'entry/**'
+      - 'AppScope/**'
+      - 'hvigor/**'
+      - 'build-profile.json5'
+      - 'oh-package.json5'
+      - 'hvigorfile.ts'
 
 env:
   SDK_ROOT: ${{ github.workspace }}/ohos-sdk

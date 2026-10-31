@@ -8,7 +8,7 @@ import { LimboFont, LimboSize } from '../theme/LimboTheme';
 export struct SwitchRow {
   label: ResourceStr = '';
   checked: boolean = false;
-  enabled: boolean = true;
+  isEnabled: boolean = true;
   onCheckedChange: (checked: boolean) => void = () => {
   };
 
@@ -23,7 +23,7 @@ export struct SwitchRow {
 
       Toggle({ type: ToggleType.Switch, isOn: this.checked })
         .selectedColor($r('app.color.limbo_primary'))
-        .enabled(this.enabled)
+        .enabled(this.isEnabled)
         .onChange((isOn: boolean) => {
           this.onCheckedChange(isOn);
         })
@@ -43,7 +43,7 @@ export struct LabeledTextFieldRow {
   value: string = '';
   placeholder: string = '';
   numeric: boolean = false;
-  enabled: boolean = true;
+  isEnabled: boolean = true;
   onValueChange: (value: string) => void = () => {
   };
 
@@ -66,7 +66,7 @@ export struct LabeledTextFieldRow {
         .backgroundColor($r('app.color.limbo_field_background'))
         .borderRadius(10)
         .padding({ left: 12, right: 12 })
-        .enabled(this.enabled)
+        .enabled(this.isEnabled)
         .layoutWeight(1)
         .onChange((value: string) => {
           this.onValueChange(value);

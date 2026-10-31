@@ -380,7 +380,7 @@ struct Index {
         summary: '模拟架构：' + this.state.archLabel,
         options: this.state.machines,
         selectedIndex: this.state.machineSel,
-        enabled: this.state.machineEnabled,
+        isEnabled: this.state.machineEnabled,
         onSelected: (index: number) => {
           this.onMachineSelected(index);
         }
@@ -470,7 +470,7 @@ struct Index {
         icon: $r('app.media.ui'),
         options: this.state.uiOptions,
         selectedIndex: this.state.uiSel,
-        enabled: this.state.uiEnabled,
+        isEnabled: this.state.uiEnabled,
         onSelected: (index: number) => {
           this.state.uiSel = index;
           this.persist(MachineProperty.UI, this.optionAt(this.state.uiOptions, index));
@@ -481,7 +481,7 @@ struct Index {
         icon: $r('app.media.keyboard'),
         options: this.state.keyboardOptions,
         selectedIndex: this.state.keyboardSel,
-        enabled: this.state.keyboardEnabled,
+        isEnabled: this.state.keyboardEnabled,
         onSelected: (index: number) => {
           this.state.keyboardSel = index;
           this.persist(MachineProperty.KEYBOARD, this.optionAt(this.state.keyboardOptions, index));
@@ -492,7 +492,7 @@ struct Index {
         icon: $r('app.media.mouse'),
         options: this.state.mouseOptions,
         selectedIndex: this.state.mouseSel,
-        enabled: this.state.mouseEnabled,
+        isEnabled: this.state.mouseEnabled,
         onSelected: (index: number) => {
           this.state.mouseSel = index;
           this.persist(MachineProperty.MOUSE, this.optionAt(this.state.mouseOptions, index));
@@ -521,7 +521,7 @@ struct Index {
         icon: $r('app.media.machinetype'),
         options: this.state.machineTypeOptions,
         selectedIndex: this.state.machineTypeSel,
-        enabled: this.state.machineTypeEnabled,
+        isEnabled: this.state.machineTypeEnabled,
         onSelected: (index: number) => {
           this.state.machineTypeSel = index;
           this.persist(MachineProperty.MACHINETYPE, this.optionAt(this.state.machineTypeOptions, index));
@@ -532,7 +532,7 @@ struct Index {
         icon: $r('app.media.cpu'),
         options: this.state.cpuOptions,
         selectedIndex: this.state.cpuSel,
-        enabled: this.state.cpuEnabled,
+        isEnabled: this.state.cpuEnabled,
         onSelected: (index: number) => {
           this.state.cpuSel = index;
           this.persist(MachineProperty.CPU, this.optionAt(this.state.cpuOptions, index));
@@ -542,7 +542,7 @@ struct Index {
         label: $r('app.string.label_cpu_cores'),
         value: this.state.cpuNumValue,
         numeric: true,
-        enabled: this.state.cpuNumEnabled,
+        isEnabled: this.state.cpuNumEnabled,
         onValueChange: (value: string) => {
           this.state.cpuNumValue = this.digitsOnly(value, 3);
           this.persist(MachineProperty.CPUNUM, this.state.cpuNumValue);
@@ -552,7 +552,7 @@ struct Index {
         label: $r('app.string.label_ram_memory_mb'),
         value: this.state.ramValue,
         numeric: true,
-        enabled: this.state.ramEnabled,
+        isEnabled: this.state.ramEnabled,
         onValueChange: (value: string) => {
           this.state.ramValue = this.digitsOnly(value, 6);
           this.persist(MachineProperty.MEMORY, this.state.ramValue);
@@ -561,7 +561,7 @@ struct Index {
       SwitchRow({
         label: $r('app.string.label_disable_i8042'),
         checked: this.state.disableI8042,
-        enabled: this.state.disableI8042Enabled,
+        isEnabled: this.state.disableI8042Enabled,
         onCheckedChange: (checked: boolean) => {
           this.state.disableI8042 = checked;
           this.persist(MachineProperty.DISABLE_I8042, checked ? '1' : '0');
@@ -570,7 +570,7 @@ struct Index {
       SwitchRow({
         label: $r('app.string.label_enable_nvram'),
         checked: this.state.enableNvram,
-        enabled: this.state.enableNvramEnabled,
+        isEnabled: this.state.enableNvramEnabled,
         onCheckedChange: (checked: boolean) => {
           this.state.enableNvram = checked;
           this.persist(MachineProperty.ENABLE_NVRAM, checked ? '1' : '0');
@@ -581,7 +581,7 @@ struct Index {
         icon: $r('app.media.sysfile'),
         options: this.state.nvramOptions,
         selectedIndex: this.state.nvramSel,
-        enabled: this.state.enableNvram && this.state.nvramEnabled,
+        isEnabled: this.state.enableNvram && this.state.nvramEnabled,
         onSelected: (index: number) => {
           this.state.nvramSel = index;
         }
@@ -591,7 +591,7 @@ struct Index {
         icon: $r('app.media.cpu'),
         options: this.state.accelOptions,
         selectedIndex: this.state.accelSel,
-        enabled: this.state.accelEnabled,
+        isEnabled: this.state.accelEnabled,
         onSelected: (index: number) => {
           this.state.accelSel = index;
           this.state.showMTTCGSwitch = this.optionAt(this.state.accelOptions, index) === 'TCG';
@@ -604,7 +604,7 @@ struct Index {
         SwitchRow({
           label: $r('app.string.label_enable_mttcg'),
           checked: this.state.enableMTTCG,
-          enabled: this.state.enableMTTCGEnabled,
+          isEnabled: this.state.enableMTTCGEnabled,
           onCheckedChange: (checked: boolean) => {
             this.state.enableMTTCG = checked;
             this.persist(MachineProperty.ENABLE_MTTCG, checked ? '1' : '0');
@@ -614,7 +614,7 @@ struct Index {
       SwitchRow({
         label: $r('app.string.label_disable_hpet'),
         checked: this.state.disableHPET,
-        enabled: this.state.disableHPETEnabled,
+        isEnabled: this.state.disableHPETEnabled,
         onCheckedChange: (checked: boolean) => {
           this.state.disableHPET = checked;
           this.persist(MachineProperty.DISABLE_HPET, checked ? '1' : '0');
@@ -623,7 +623,7 @@ struct Index {
       SwitchRow({
         label: $r('app.string.label_disable_tsc'),
         checked: this.state.disableTSC,
-        enabled: this.state.disableTSCEnabled,
+        isEnabled: this.state.disableTSCEnabled,
         onCheckedChange: (checked: boolean) => {
           this.state.disableTSC = checked;
           this.persist(MachineProperty.DISABLE_TSC, checked ? '1' : '0');
@@ -632,7 +632,7 @@ struct Index {
       SwitchRow({
         label: $r('app.string.label_disable_acpi'),
         checked: this.state.disableACPI,
-        enabled: this.state.disableACPIEnabled,
+        isEnabled: this.state.disableACPIEnabled,
         onCheckedChange: (checked: boolean) => {
           this.state.disableACPI = checked;
           this.persist(MachineProperty.DISABLE_ACPI, checked ? '1' : '0');
@@ -702,7 +702,7 @@ struct Index {
         icon: $r('app.media.drives'),
         options: this.state.bootOptions,
         selectedIndex: this.state.bootSel,
-        enabled: this.state.bootEnabled,
+        isEnabled: this.state.bootEnabled,
         onSelected: (index: number) => {
           this.state.bootSel = index;
           this.persist(MachineProperty.BOOT_CONFIG, this.optionAt(this.state.bootOptions, index));
@@ -713,7 +713,7 @@ struct Index {
         icon: $r('app.media.sysfile'),
         options: this.state.biosOptions,
         selectedIndex: this.state.biosSel,
-        enabled: this.state.biosEnabled,
+        isEnabled: this.state.biosEnabled,
         onSelected: (index: number) => {
           this.state.biosSel = index;
           const value: string = this.optionAt(this.state.biosOptions, index);
@@ -725,7 +725,7 @@ struct Index {
         icon: $r('app.media.sysfile'),
         options: this.state.kernelOptions,
         selectedIndex: this.state.kernelSel,
-        enabled: this.state.kernelEnabled,
+        isEnabled: this.state.kernelEnabled,
         onSelected: (index: number) => {
           this.state.kernelSel = index;
           const value: string = this.optionAt(this.state.kernelOptions, index);
@@ -737,7 +737,7 @@ struct Index {
         icon: $r('app.media.sysfile'),
         options: this.state.initrdOptions,
         selectedIndex: this.state.initrdSel,
-        enabled: this.state.initrdEnabled,
+        isEnabled: this.state.initrdEnabled,
         onSelected: (index: number) => {
           this.state.initrdSel = index;
           const value: string = this.optionAt(this.state.initrdOptions, index);
@@ -748,7 +748,7 @@ struct Index {
         label: $r('app.string.label_append'),
         value: this.state.append,
         placeholder: 'root=/dev/sda1',
-        enabled: this.state.appendEnabled,
+        isEnabled: this.state.appendEnabled,
         onValueChange: (value: string) => {
           this.state.append = value;
           this.persist(MachineProperty.APPEND, value);
@@ -777,7 +777,7 @@ struct Index {
         icon: $r('app.media.screen'),
         options: this.state.vgaOptions,
         selectedIndex: this.state.vgaSel,
-        enabled: this.state.vgaEnabled,
+        isEnabled: this.state.vgaEnabled,
         onSelected: (index: number) => {
           this.state.vgaSel = index;
           this.persist(MachineProperty.VGA, this.optionAt(this.state.vgaOptions, index));
@@ -806,7 +806,7 @@ struct Index {
         icon: $r('app.media.audiocard'),
         options: this.state.soundOptions,
         selectedIndex: this.state.soundSel,
-        enabled: this.state.soundEnabled,
+        isEnabled: this.state.soundEnabled,
         onSelected: (index: number) => {
           this.state.soundSel = index;
           const value: string = this.optionAt(this.state.soundOptions, index);
@@ -836,7 +836,7 @@ struct Index {
         icon: $r('app.media.network'),
         options: this.state.netOptions,
         selectedIndex: this.state.netSel,
-        enabled: this.state.netEnabled,
+        isEnabled: this.state.netEnabled,
         onSelected: (index: number) => {
           this.state.netSel = index;
           const hasNetwork: boolean = index > 0 && this.state.netEnabled;
@@ -852,7 +852,7 @@ struct Index {
         icon: $r('app.media.networkcard'),
         options: this.state.nicOptions,
         selectedIndex: this.state.nicSel,
-        enabled: this.state.nicEnabled,
+        isEnabled: this.state.nicEnabled,
         onSelected: (index: number) => {
           this.state.nicSel = index;
           this.persist(MachineProperty.NICCONFIG, this.optionAt(this.state.nicOptions, index));
@@ -862,7 +862,7 @@ struct Index {
         label: $r('app.string.label_dns_server'),
         value: this.state.dns,
         placeholder: '8.8.8.8',
-        enabled: this.state.dnsEnabled,
+        isEnabled: this.state.dnsEnabled,
         onValueChange: (value: string) => {
           this.state.dns = value;
           LimboSettingsManager.setDnsServer(value);
@@ -872,7 +872,7 @@ struct Index {
         label: $r('app.string.label_host_forward'),
         value: this.state.hostFwd,
         placeholder: 'tcp:2222:22',
-        enabled: this.state.hostFwdEnabled,
+        isEnabled: this.state.hostFwdEnabled,
         onValueChange: (value: string) => {
           this.state.hostFwd = value;
           this.persist(MachineProperty.HOSTFWD, value);
@@ -901,7 +901,7 @@ struct Index {
         icon: $r('app.media.advanced'),
         options: this.state.usbControllerOptions,
         selectedIndex: this.state.usbControllerSel,
-        enabled: this.state.usbControllerEnabled,
+        isEnabled: this.state.usbControllerEnabled,
         onSelected: (index: number) => {
           this.state.usbControllerSel = index;
           this.persist(MachineProperty.USB_CONTROLLER,
@@ -911,7 +911,7 @@ struct Index {
       LabeledTextFieldRow({
         label: $r('app.string.label_extra_qemu_params'),
         value: this.state.extraParams,
-        enabled: this.state.extraParamsEnabled,
+        isEnabled: this.state.extraParamsEnabled,
         onValueChange: (value: string) => {
           this.state.extraParams = value;
           this.persist(MachineProperty.EXTRA_PARAMS, value);

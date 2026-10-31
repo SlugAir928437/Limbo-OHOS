@@ -11,7 +11,7 @@ export struct LimboDropdown {
   summary: string = '';
   options: string[] = [];
   selectedIndex: number = 0;
-  enabled: boolean = true;
+  isEnabled: boolean = true;
   onSelected: (index: number) => void = () => {
   };
 
@@ -37,7 +37,7 @@ export struct LimboDropdown {
   }
 
   private menuContent(): MenuElement[] {
-    if (!this.enabled) {
+    if (!this.isEnabled) {
       return [];
     }
     return this.buildMenuItems();
@@ -89,8 +89,8 @@ export struct LimboDropdown {
     }
     .width('100%')
     .padding({ left: 16, right: 16, top: 14, bottom: 14 })
-    .opacity(this.enabled ? 1 : 0.4)
-    .enabled(this.enabled)
+    .opacity(this.isEnabled ? 1 : 0.4)
+    .enabled(this.isEnabled)
     .bindMenu(this.menuContent())
   }
 }

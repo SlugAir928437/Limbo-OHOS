@@ -14,11 +14,13 @@ export class ArchDefinitions {
   private static ready: Promise<void> | null = null;
 
   static ensureReady(context: common.Context): Promise<void> {
-    if (ready !== null) {
-      return ArchDefinitions.ready;
+    const existing: Promise<void> | null = ArchDefinitions.ready;
+    if (existing !== null) {
+      return existing;
     }
-    ArchDefinitions.ready = ArchDefinitions.load(context);
-    return ArchDefinitions.ready;
+    const started: Promise<void> = ArchDefinitions.load(context);
+    ArchDefinitions.ready = started;
+    return started;
   }
 
   private static async load(context: common.Context): Promise<void> {
