@@ -460,8 +460,6 @@ jobs:
         run: |
           set -euo pipefail
           NDK="$OHOS_NDK_HOME"
-          SYSROOT="$NDK/sysroot"
-          CMAKE_TOOLCHAIN="$BUILD_ROOT/toolchain/ohos-cmake.cmake"
 
           if [ ! -d "$BUILD_ROOT/src/ohos_sdl2" ]; then
             git clone --depth 1 https://gitcode.com/CPF-ApplicationTPC/ohos_sdl2.git "$BUILD_ROOT/src/ohos_sdl2"
@@ -470,12 +468,13 @@ jobs:
           rm -rf "$BUILD_ROOT/build/sdl2"
           cmake -S "$BUILD_ROOT/src/ohos_sdl2/ohos-project/entry/src/main/cpp" \
             -B "$BUILD_ROOT/build/sdl2" -G Ninja \
-            -DCMAKE_TOOLCHAIN_FILE="$CMAKE_TOOLCHAIN" \
+            -DCMAKE_TOOLCHAIN_FILE="$NDK/build/cmake/ohos.toolchain.cmake" \
             -DCMAKE_BUILD_TYPE=Release \
-            -DOHOS_ARCH=arm64-v8a -DOHOS_PLATFORM=OHOS
+            -DOHOS_ARCH=arm64-v8a -DOHOS_PLATFORM=OHOS \
+            -DOHOS_PLATFORM_LEVEL=21
           cmake --build "$BUILD_ROOT/build/sdl2" --target SDL2 -j "$(nproc)"
 
-          SDL_LIB=$(find "$BUILD_ROOT/build/sdl2" -name 'libSDL2.so' | head -n 1)
+          SDL_LIB=$(find "$BUILD_ROOT/build/sdl2" -name 'libSDL2.so' -print -quit)
           test -n "$SDL_LIB"
           echo "SDL_LIB=$SDL_LIB" >> "$GITHUB_ENV"
           echo "SDL_LIBDIR=$(dirname "$SDL_LIB")" >> "$GITHUB_ENV"
