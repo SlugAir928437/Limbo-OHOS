@@ -141,12 +141,28 @@ jobs:
           TOOLCHAIN_BIN="$GITHUB_WORKSPACE/.ohos-toolchain/bin"
           mkdir -p "$TOOLCHAIN_BIN"
 
-          # 统一生成 wrapper：固定 target/sysroot，并强制 -fPIC
-          # （QEMU 的目标文件最终要链接成 .so，不能依赖 configure 的 c_args 是否生效）
+          # 优先沿用 SDK 自带的 <triple>-clang 驱动（带 OHOS 专有的头文件/宏配置），
+          # 仅在其外层包一层强制 -fPIC（QEMU 目标文件最终要链接成 .so）。
+          if [ -x "$LLVM_BIN/${CROSS_TRIPLE}-clang" ]; then
+            REAL_CC="$LLVM_BIN/${CROSS_TRIPLE}-clang"
+            REAL_CXX="$LLVM_BIN/${CROSS_TRIPLE}-clang++"
+            BASE_FLAGS=""
+          else
+            echo "SDK 中没有 ${CROSS_TRIPLE}-clang，使用 clang + 显式 target/sysroot"
+            REAL_CC="$LLVM_BIN/clang"
+            REAL_CXX="$LLVM_BIN/clang++"
+            BASE_FLAGS="--target=$CROSS_TRIPLE --sysroot=$NDK/sysroot"
+          fi
+
           for tool in clang clang++; do
+            if [ "$tool" = "clang" ]; then
+              REAL_COMPILER="$REAL_CC"
+            else
+              REAL_COMPILER="$REAL_CXX"
+            fi
             cat > "$TOOLCHAIN_BIN/${CROSS_TRIPLE}-${tool}" <<EOF
           #!/bin/sh
-          exec "$LLVM_BIN/${tool}" --target=$CROSS_TRIPLE --sysroot="$NDK/sysroot" "\$@" -fPIC
+          exec "$REAL_COMPILER" $BASE_FLAGS "\$@" -fPIC
           EOF
             chmod +x "$TOOLCHAIN_BIN/${CROSS_TRIPLE}-${tool}"
           done
