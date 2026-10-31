@@ -141,19 +141,15 @@ jobs:
           TOOLCHAIN_BIN="$GITHUB_WORKSPACE/.ohos-toolchain/bin"
           mkdir -p "$TOOLCHAIN_BIN"
 
-          if [ -x "$LLVM_BIN/${CROSS_TRIPLE}-clang" ]; then
-            ln -sf "$LLVM_BIN/${CROSS_TRIPLE}-clang" "$TOOLCHAIN_BIN/${CROSS_TRIPLE}-clang"
-            ln -sf "$LLVM_BIN/${CROSS_TRIPLE}-clang++" "$TOOLCHAIN_BIN/${CROSS_TRIPLE}-clang++"
-          else
-            echo "SDK 中没有 ${CROSS_TRIPLE}-clang，生成 clang wrapper"
-            for tool in clang clang++; do
-              cat > "$TOOLCHAIN_BIN/${CROSS_TRIPLE}-${tool}" <<EOF
+          # 统一生成 wrapper：固定 target/sysroot，并强制 -fPIC
+          # （QEMU 的目标文件最终要链接成 .so，不能依赖 configure 的 c_args 是否生效）
+          for tool in clang clang++; do
+            cat > "$TOOLCHAIN_BIN/${CROSS_TRIPLE}-${tool}" <<EOF
           #!/bin/sh
-          exec "$LLVM_BIN/${tool}" --target=$CROSS_TRIPLE --sysroot="$NDK/sysroot" "\$@"
+          exec "$LLVM_BIN/${tool}" --target=$CROSS_TRIPLE --sysroot="$NDK/sysroot" "\$@" -fPIC
           EOF
-              chmod +x "$TOOLCHAIN_BIN/${CROSS_TRIPLE}-${tool}"
-            done
-          fi
+            chmod +x "$TOOLCHAIN_BIN/${CROSS_TRIPLE}-${tool}"
+          done
 
           # QEMU configure 通过 cross-prefix 查找 gcc/g++/ar/nm/ranlib/strip
           ln -sf "$TOOLCHAIN_BIN/${CROSS_TRIPLE}-clang" "$TOOLCHAIN_BIN/${CROSS_TRIPLE}-gcc"
@@ -587,6 +583,9 @@ jobs:
           mkdir -p "$GITHUB_WORKSPACE/dist"
 
           BUILD_DIR="$BUILD_ROOT/qemu"
+
+          # 诊断：确认 QEMU 对象确实以 -fPIC 编译
+          ninja -C "$BUILD_DIR" -t commands libcommon.a.p/cpu-common.c.o 2>/dev/null | tail -n 1 || true
 
           for TARGET in x86_64-softmmu aarch64-softmmu; do
             GUEST="${TARGET%-softmmu}"
