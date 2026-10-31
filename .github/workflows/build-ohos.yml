@@ -573,6 +573,9 @@ jobs:
               --extra-ldflags="--target=$CROSS_TRIPLE --sysroot=$SYSROOT -fuse-ld=lld -L$DEPS/lib -L$SDL_LIBDIR $NDK/llvm/lib/aarch64-linux-ohos/libc++.a $NDK/llvm/lib/aarch64-linux-ohos/libc++abi.a $NDK/llvm/lib/aarch64-linux-ohos/libunwind.a" \
               --prefix="$BUILD_DIR/install"
             ninja -j "$(nproc)"
+            # 该静态库 build_by_default=false（可执行文件直接用对象链接），
+            # 但后续把 QEMU 打成 .so 需要它，这里显式构建
+            ninja libqemu-x86_64-softmmu.a libqemu-aarch64-softmmu.a
           )
 
       - name: Link dlopen-able shared libraries
@@ -592,10 +595,14 @@ jobs:
             # libsystem/libcommon 对象）打进这个静态库，直接整体链接即可，
             # 避免手动收集 .o 时把另一目标的 stub 版本也带进来。
             ARCHIVE="$BUILD_DIR/libqemu-$GUEST-softmmu.a"
-            test -f "$ARCHIVE" || {
-              echo "找不到 $ARCHIVE" >&2
+            if [ ! -f "$ARCHIVE" ]; then
+              ninja -C "$BUILD_DIR" "libqemu-$GUEST-softmmu.a"
+            fi
+            if [ ! -f "$ARCHIVE" ]; then
+              echo "找不到 $ARCHIVE，现有归档：" >&2
+              find "$BUILD_DIR" -maxdepth 1 -name 'libqemu-*.a' -print >&2 || true
               exit 1
-            }
+            fi
 
             # QEMU 子项目库的实际路径随 Meson 配置变化，优先在 build 内的 subprojects 查找
             SLIRP_LIB="$(find "$BUILD_DIR/subprojects" -name 'libslirp.a' -print -quit 2>/dev/null || true)"
