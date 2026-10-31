@@ -280,8 +280,7 @@ jobs:
             meson setup "$dir" "$src" \
               --cross-file "$MESON_CROSS" \
               --prefix "$DEPS" --libdir lib \
-              --buildtype release --default-library static \
-              --wrap-mode=nodownload "$@"
+              --buildtype release --default-library static "$@"
             ninja -C "$dir"
             ninja -C "$dir" install
           }
