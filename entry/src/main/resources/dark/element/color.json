@@ -1,0 +1,76 @@
+{
+  "color": [
+    {
+      "name": "start_window_background",
+      "value": "#242424"
+    },
+    {
+      "name": "limbo_window_background",
+      "value": "#242424"
+    },
+    {
+      "name": "limbo_card",
+      "value": "#1C1C1C"
+    },
+    {
+      "name": "limbo_text_primary",
+      "value": "#F2F2F2"
+    },
+    {
+      "name": "limbo_text_secondary",
+      "value": "#80FFFFFF"
+    },
+    {
+      "name": "limbo_primary",
+      "value": "#277AF7"
+    },
+    {
+      "name": "limbo_on_primary",
+      "value": "#FFFFFF"
+    },
+    {
+      "name": "limbo_primary_container",
+      "value": "#338FE4"
+    },
+    {
+      "name": "limbo_secondary_container",
+      "value": "#434343"
+    },
+    {
+      "name": "limbo_tertiary_container",
+      "value": "#2B3B54"
+    },
+    {
+      "name": "limbo_error",
+      "value": "#F12522"
+    },
+    {
+      "name": "limbo_error_container",
+      "value": "#2E0603"
+    },
+    {
+      "name": "limbo_field_background",
+      "value": "#2C2C2C"
+    },
+    {
+      "name": "limbo_divider",
+      "value": "#393939"
+    },
+    {
+      "name": "status_running",
+      "value": "#4CAF50"
+    },
+    {
+      "name": "status_stopped",
+      "value": "#9E9E9E"
+    },
+    {
+      "name": "status_paused",
+      "value": "#FFC107"
+    },
+    {
+      "name": "status_saving",
+      "value": "#2196F3"
+    }
+  ]
+}

@@ -1,0 +1,13 @@
+{
+  "name": "entry",
+  "version": "1.0.0",
+  "description": "Please describe the basic information.",
+  "main": "",
+  "author": "",
+  "license": "",
+  "dependencies": {
+    "liblimbo.so": "file:./src/main/cpp/types/liblimbo",
+    "libSDL2.so": "file:./src/main/cpp/types/libSDL2"
+  }
+}
+

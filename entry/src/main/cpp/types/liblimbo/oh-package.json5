@@ -1,0 +1,9 @@
+{
+  "name": "liblimbo.so",
+  "version": "1.0.0",
+  "description": "Limbo native bridge (NAPI, TCG-only QEMU)",
+  "main": "",
+  "author": "",
+  "license": "",
+  "types": "./index.d.ts"
+}

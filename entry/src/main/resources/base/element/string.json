@@ -1,0 +1,308 @@
+{
+  "string": [
+    {
+      "name": "module_desc",
+      "value": "Limbo 虚拟机模拟器"
+    },
+    {
+      "name": "EntryAbility_desc",
+      "value": "Limbo 虚拟机模拟器"
+    },
+    {
+      "name": "EntryAbility_label",
+      "value": "Limbo 模拟器"
+    },
+    {
+      "name": "app_name",
+      "value": "Limbo 模拟器"
+    },
+    {
+      "name": "machine_header",
+      "value": "虚拟机："
+    },
+    {
+      "name": "no_machine_selected",
+      "value": "未选择虚拟机"
+    },
+    {
+      "name": "status_stopped",
+      "value": "已停止"
+    },
+    {
+      "name": "status_running",
+      "value": "运行中"
+    },
+    {
+      "name": "status_suspended",
+      "value": "已挂起"
+    },
+    {
+      "name": "status_paused",
+      "value": "已暂停"
+    },
+    {
+      "name": "status_saving",
+      "value": "正在保存状态"
+    },
+    {
+      "name": "title_user_interface",
+      "value": "用户界面"
+    },
+    {
+      "name": "title_keyboard",
+      "value": "键盘"
+    },
+    {
+      "name": "title_mouse",
+      "value": "鼠标"
+    },
+    {
+      "name": "title_board",
+      "value": "主板"
+    },
+    {
+      "name": "title_storage_devices",
+      "value": "存储设备"
+    },
+    {
+      "name": "title_boot",
+      "value": "启动"
+    },
+    {
+      "name": "title_graphics",
+      "value": "图形"
+    },
+    {
+      "name": "title_audio",
+      "value": "音频"
+    },
+    {
+      "name": "title_network",
+      "value": "网络"
+    },
+    {
+      "name": "title_advanced",
+      "value": "高级"
+    },
+    {
+      "name": "label_display",
+      "value": "显示"
+    },
+    {
+      "name": "label_machine_type",
+      "value": "机型："
+    },
+    {
+      "name": "label_cpu_model",
+      "value": "CPU 型号："
+    },
+    {
+      "name": "label_cpu_cores",
+      "value": "CPU 核心数："
+    },
+    {
+      "name": "label_ram_memory_mb",
+      "value": "内存大小 (MB)："
+    },
+    {
+      "name": "label_disable_i8042",
+      "value": "禁用 i8042"
+    },
+    {
+      "name": "label_enable_nvram",
+      "value": "启用 NVRAM"
+    },
+    {
+      "name": "label_nvram_file",
+      "value": "NVRAM 文件"
+    },
+    {
+      "name": "label_accel",
+      "value": "加速器"
+    },
+    {
+      "name": "label_enable_mttcg",
+      "value": "启用 MTTCG"
+    },
+    {
+      "name": "label_disable_hpet",
+      "value": "禁用 HPET"
+    },
+    {
+      "name": "label_disable_tsc",
+      "value": "禁用 TSC"
+    },
+    {
+      "name": "label_disable_acpi",
+      "value": "禁用 ACPI"
+    },
+    {
+      "name": "label_boot_from_device",
+      "value": "启动设备："
+    },
+    {
+      "name": "label_bios",
+      "value": "BIOS："
+    },
+    {
+      "name": "label_kernel",
+      "value": "内核："
+    },
+    {
+      "name": "label_initrd",
+      "value": "Initrd："
+    },
+    {
+      "name": "label_append",
+      "value": "附加参数："
+    },
+    {
+      "name": "label_video_display",
+      "value": "视频显示："
+    },
+    {
+      "name": "label_sound_card",
+      "value": "声卡："
+    },
+    {
+      "name": "label_network",
+      "value": "网络"
+    },
+    {
+      "name": "label_network_card",
+      "value": "网卡："
+    },
+    {
+      "name": "label_dns_server",
+      "value": "DNS 服务器："
+    },
+    {
+      "name": "label_host_forward",
+      "value": "主机转发："
+    },
+    {
+      "name": "label_usb_controller",
+      "value": "USB 控制器："
+    },
+    {
+      "name": "label_extra_qemu_params",
+      "value": "附加 QEMU 参数："
+    },
+    {
+      "name": "button_start",
+      "value": "开始"
+    },
+    {
+      "name": "button_pause",
+      "value": "暂停"
+    },
+    {
+      "name": "button_stop",
+      "value": "停止"
+    },
+    {
+      "name": "button_restart",
+      "value": "重启"
+    },
+    {
+      "name": "add_storage_device",
+      "value": "添加/更改"
+    },
+    {
+      "name": "remove_storage_device",
+      "value": "移除设备"
+    },
+    {
+      "name": "title_storage_device_editor",
+      "value": "存储设备"
+    },
+    {
+      "name": "label_storage_type",
+      "value": "类型"
+    },
+    {
+      "name": "label_storage_interface",
+      "value": "接口"
+    },
+    {
+      "name": "label_storage_format",
+      "value": "格式"
+    },
+    {
+      "name": "label_storage_cache",
+      "value": "缓存"
+    },
+    {
+      "name": "label_storage_size",
+      "value": "容量"
+    },
+    {
+      "name": "label_storage_size_unit",
+      "value": "容量单位"
+    },
+    {
+      "name": "label_new_image_name",
+      "value": "镜像名称"
+    },
+    {
+      "name": "label_storage_image",
+      "value": "镜像"
+    },
+    {
+      "name": "ok",
+      "value": "确定"
+    },
+    {
+      "name": "cancel",
+      "value": "取消"
+    },
+    {
+      "name": "image_filename_cannot_be_empty",
+      "value": "镜像文件名不能为空"
+    },
+    {
+      "name": "device_already_exists",
+      "value": "该设备类型已存在"
+    },
+    {
+      "name": "select_machine_first",
+      "value": "请先选择或创建虚拟机"
+    },
+    {
+      "name": "vm_not_running",
+      "value": "虚拟机未运行"
+    },
+    {
+      "name": "vm_running",
+      "value": "虚拟机运行中"
+    },
+    {
+      "name": "machine_name_exists",
+      "value": "虚拟机名称已存在，请选择另一个名称"
+    },
+    {
+      "name": "machine_delete_failed",
+      "value": "删除虚拟机失败"
+    },
+    {
+      "name": "machine_deleted",
+      "value": "虚拟机已删除"
+    },
+    {
+      "name": "create_machine",
+      "value": "创建虚拟机"
+    },
+    {
+      "name": "delete_machine",
+      "value": "删除虚拟机"
+    },
+    {
+      "name": "help",
+      "value": "帮助"
+    },
+    {
+      "name": "feature_not_migrated",
+      "value": "该功能尚未迁移到 HarmonyOS"
+    }
+  ]
+}

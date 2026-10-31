@@ -1,0 +1,13 @@
+#ifndef LIMBO_LOG_H
+#define LIMBO_LOG_H
+
+#include <hilog/log.h>
+
+#define LIMBO_LOG_DOMAIN 0x3200
+#define LIMBO_LOG_TAG "Limbo"
+
+#define LOGI(...) OH_LOG_Print(LOG_APP, LOG_INFO, LIMBO_LOG_DOMAIN, LIMBO_LOG_TAG, __VA_ARGS__)
+#define LOGW(...) OH_LOG_Print(LOG_APP, LOG_WARN, LIMBO_LOG_DOMAIN, LIMBO_LOG_TAG, __VA_ARGS__)
+#define LOGE(...) OH_LOG_Print(LOG_APP, LOG_ERROR, LIMBO_LOG_DOMAIN, LIMBO_LOG_TAG, __VA_ARGS__)
+
+#endif // LIMBO_LOG_H
