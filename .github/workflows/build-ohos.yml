@@ -396,6 +396,12 @@ jobs:
             -Dtests=false -Ddocs=false \
             -Dglx=no -Dx11=false -Degl=yes
 
+          # OHOS 没有 gbm；virglrenderer 一旦发现 libdrm 就会强制依赖 gbm。
+          # 构建 virglrenderer 时临时隐藏 libdrm.pc，构建完再恢复。
+          mv "$DEPS/lib/pkgconfig/libdrm.pc" "$BUILD_ROOT/libdrm.pc.bak"
+          if [ -f "$DEPS/lib/pkgconfig/libdrm_freedreno.pc" ]; then
+            mv "$DEPS/lib/pkgconfig/libdrm_freedreno.pc" "$BUILD_ROOT/libdrm_freedreno.pc.bak"
+          fi
           fetch "virglrenderer-$VIRGL_VERSION" "https://gitlab.freedesktop.org/virgl/virglrenderer/-/archive/${VIRGL_VERSION}/virglrenderer-${VIRGL_VERSION}.tar.gz"
           meson_build "virglrenderer-$VIRGL_VERSION" \
             -Dplatforms=egl \
@@ -403,6 +409,10 @@ jobs:
             -Dminigbm_allocation=false \
             -Ddrm=disabled \
             -Dtests=false
+          mv "$BUILD_ROOT/libdrm.pc.bak" "$DEPS/lib/pkgconfig/libdrm.pc"
+          if [ -f "$BUILD_ROOT/libdrm_freedreno.pc.bak" ]; then
+            mv "$BUILD_ROOT/libdrm_freedreno.pc.bak" "$DEPS/lib/pkgconfig/libdrm_freedreno.pc"
+          fi
 
           # SPICE
           fetch "spice-protocol-$SPICE_PROTOCOL_VERSION" "https://gitlab.freedesktop.org/spice/spice-protocol/-/archive/v${SPICE_PROTOCOL_VERSION}/spice-protocol-v${SPICE_PROTOCOL_VERSION}.tar.gz"
