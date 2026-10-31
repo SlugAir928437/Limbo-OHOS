@@ -419,10 +419,22 @@ jobs:
           meson_build "spice-protocol-$SPICE_PROTOCOL_VERSION"
 
           fetch "spice-$SPICE_VERSION" "https://gitlab.freedesktop.org/spice/spice/-/archive/v${SPICE_VERSION}/spice-v${SPICE_VERSION}.tar.gz"
+          # GitLab 源码包不含 submodule；按 spice v0.15.2 记录的 commit 补齐 spice-common
+          SPICE_COMMON_COMMIT=58d375e5eadc6fb9e587e99fd81adcb95d01e8d6
+          SPICE_COMMON_DIR="$BUILD_ROOT/src/spice-$SPICE_VERSION/subprojects/spice-common"
+          if [ ! -f "$SPICE_COMMON_DIR/meson.build" ]; then
+            mkdir -p "$SPICE_COMMON_DIR"
+            curl -L --retry 3 --fail -o /tmp/spice-common.tar.gz \
+              "https://gitlab.freedesktop.org/spice/spice-common/-/archive/${SPICE_COMMON_COMMIT}/spice-common-${SPICE_COMMON_COMMIT}.tar.gz"
+            tar -xzf /tmp/spice-common.tar.gz -C "$SPICE_COMMON_DIR" --strip-components=1
+            rm -f /tmp/spice-common.tar.gz
+          fi
+          test -f "$SPICE_COMMON_DIR/meson.build"
           meson_build "spice-$SPICE_VERSION" \
             -Dtests=false -Dmanual=false \
             -Dgstreamer=no -Dlz4=false -Dsasl=false \
-            -Dopus=disabled -Dsmartcard=disabled -Dinstrumentation=no
+            -Dopus=disabled -Dsmartcard=disabled -Dinstrumentation=no \
+            -Dspice-common:python-checks=false
 
       - name: Build SDL2 (ohos_sdl2)
         run: |
