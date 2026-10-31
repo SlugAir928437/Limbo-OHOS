@@ -589,6 +589,15 @@ jobs:
             BUILD_DIR="$BUILD_ROOT/qemu-$TARGET"
             OBJS="/tmp/objs-$GUEST.txt"
 
+            # QEMU 子项目库的实际路径随 Meson 配置变化，直接查找
+            SLIRP_LIB="$(find "$BUILD_DIR" -name 'libslirp.a' -print -quit)"
+            if [ -z "$SLIRP_LIB" ]; then
+              SLIRP_LIB="$(find "$BUILD_DIR" -name 'libslirp.so*' -print -quit)"
+            fi
+            FDT_LIB="$(find "$BUILD_DIR" -name 'libfdt.a' -print -quit)"
+            echo "slirp: ${SLIRP_LIB:-none}"
+            echo "fdt: ${FDT_LIB:-none}"
+
             # 收集该目标的全部对象文件，排除 main 与测试/桩代码
             find "$BUILD_DIR" -name '*.o' -type f \
               | grep -v 'system_main.c.o' \
@@ -602,14 +611,13 @@ jobs:
               -o "$GITHUB_WORKSPACE/dist/libqemu-system-$GUEST.so" \
               @"$OBJS" \
               -L"$DEPS/lib" -L"$SDL_LIBDIR" \
-              -L"$BUILD_DIR/subprojects/slirp" \
-              -L"$BUILD_DIR/subprojects/dtc/libfdt" \
+              ${SLIRP_LIB:-} \
+              ${FDT_LIB:-} \
               -Wl,--start-group \
               -lglib-2.0 -lgobject-2.0 -lgio-2.0 -lgmodule-2.0 \
               -lpixman-1 -lpcre2-8 -lffi \
               -lspice-server -lvirglrenderer -lepoxy -ldrm \
               -ljpeg -lssl -lcrypto -lSDL2 \
-              -lslirp -lfdt \
               -Wl,--end-group \
               "$NDK/llvm/lib/aarch64-linux-ohos/libc++.a" \
               "$NDK/llvm/lib/aarch64-linux-ohos/libc++abi.a" \
