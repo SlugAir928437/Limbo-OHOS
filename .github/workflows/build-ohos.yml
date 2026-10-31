@@ -568,7 +568,7 @@ jobs:
                 --cc="$CC" --cxx="$CXX" --objcc="$CC" \
                 --host-cc="$(command -v gcc)" \
                 --extra-cflags="--target=$CROSS_TRIPLE --sysroot=$SYSROOT -fPIC -I$DEPS/include -I$SDL_INCLUDE -I$SDL_CONFIG_INCLUDE" \
-                --extra-ldflags="--target=$CROSS_TRIPLE --sysroot=$SYSROOT -fuse-ld=lld -L$DEPS/lib -L$SDL_LIBDIR" \
+                --extra-ldflags="--target=$CROSS_TRIPLE --sysroot=$SYSROOT -fuse-ld=lld -L$DEPS/lib -L$SDL_LIBDIR $NDK/llvm/lib/aarch64-linux-ohos/libc++.a $NDK/llvm/lib/aarch64-linux-ohos/libc++abi.a $NDK/llvm/lib/aarch64-linux-ohos/libunwind.a" \
                 --prefix="$BUILD_DIR/install"
               ninja -j "$(nproc)"
             )
@@ -609,6 +609,9 @@ jobs:
               -ljpeg -lssl -lcrypto -lSDL2 \
               -lslirp -lfdt \
               -Wl,--end-group \
+              "$NDK/llvm/lib/aarch64-linux-ohos/libc++.a" \
+              "$NDK/llvm/lib/aarch64-linux-ohos/libc++abi.a" \
+              "$NDK/llvm/lib/aarch64-linux-ohos/libunwind.a" \
               -lEGL -lGLESv3 -lz -lm -lpthread -ldl \
               -Wl,--allow-shlib-undefined \
               -Wl,-soname,libqemu-system-$GUEST.so
