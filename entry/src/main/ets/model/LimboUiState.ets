@@ -324,9 +324,10 @@ export class LimboUiState {
 
   constructor() {
     // 初始为空，真实数据由 MachineDatabase / MachineController 在页面初始化时注入
-    this.machines = [];
+    this.machines = ['未选择虚拟机', '新建虚拟机…'];
     this.machineSel = 0;
-    this.machineEnabled = false;
+    // 虚拟机下拉必须始终可点，否则无法选择/新建虚拟机（与 Android 一致）
+    this.machineEnabled = true;
     this.addDeviceEnabled = false;
     this.archLabel = 'x86_64 (amd64)';
     this.setMachineLoaded(false);

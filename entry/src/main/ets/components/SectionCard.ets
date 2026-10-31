@@ -9,8 +9,8 @@ import { LimboFont, LimboSize } from '../theme/LimboTheme';
 export struct SectionCard {
   title: ResourceStr = '';
   icon: Resource = $r('app.media.advanced');
-  summary: string = '';
-  collapsed: boolean = true;
+  @Prop summary: string = '';
+  @Prop collapsed: boolean = true;
   onToggle: () => void = () => {
   };
 

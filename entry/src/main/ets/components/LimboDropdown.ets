@@ -8,10 +8,10 @@ import { LimboFont } from '../theme/LimboTheme';
 export struct LimboDropdown {
   title: ResourceStr = '';
   icon: Resource | null = null;
-  summary: string = '';
-  options: string[] = [];
-  selectedIndex: number = 0;
-  isEnabled: boolean = true;
+  @Prop summary: string = '';
+  @Prop options: string[] = [];
+  @Prop selectedIndex: number = 0;
+  @Prop isEnabled: boolean = true;
   onSelected: (index: number) => void = () => {
   };
 

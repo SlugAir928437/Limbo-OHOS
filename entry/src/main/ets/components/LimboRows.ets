@@ -7,8 +7,8 @@ import { LimboFont, LimboSize } from '../theme/LimboTheme';
 @Component
 export struct SwitchRow {
   label: ResourceStr = '';
-  checked: boolean = false;
-  isEnabled: boolean = true;
+  @Prop checked: boolean = false;
+  @Prop isEnabled: boolean = true;
   onCheckedChange: (checked: boolean) => void = () => {
   };
 
@@ -40,10 +40,10 @@ export struct SwitchRow {
 @Component
 export struct LabeledTextFieldRow {
   label: ResourceStr = '';
-  value: string = '';
+  @Prop value: string = '';
   placeholder: string = '';
-  numeric: boolean = false;
-  isEnabled: boolean = true;
+  @Prop numeric: boolean = false;
+  @Prop isEnabled: boolean = true;
   onValueChange: (value: string) => void = () => {
   };
 
@@ -85,7 +85,7 @@ export struct LabeledTextFieldRow {
 /** 小圆点状态指示器（对应 Android ui.components.StatusDot）。 */
 @Component
 export struct StatusDot {
-  dotColor: Resource = $r('app.color.status_stopped');
+  @Prop dotColor: Resource = $r('app.color.status_stopped');
   dotSize: number = LimboSize.statusDot;
 
   build() {

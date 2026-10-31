@@ -164,29 +164,28 @@ struct Index {
 
   /** 控制器状态 -> 状态卡片/可用性。 */
   private applyStatus(status: MachineStatus): void {
+    // 虚拟机下拉始终可点：否则“未选择任何虚拟机”时下拉被禁用，
+    // 用户既无法新建也无法切换虚拟机（死锁）。
+    this.state.machineEnabled = true;
     switch (status) {
       case MachineStatus.Running:
         this.state.statusKind = 1;
         this.state.statusRunning = true;
-        this.state.machineEnabled = false;
         this.state.addDeviceEnabled = false;
         break;
       case MachineStatus.Paused:
         this.state.statusKind = 2;
         this.state.statusRunning = false;
-        this.state.machineEnabled = true;
         this.state.addDeviceEnabled = true;
         break;
       case MachineStatus.Saving:
         this.state.statusKind = 3;
         this.state.statusRunning = true;
-        this.state.machineEnabled = false;
         this.state.addDeviceEnabled = false;
         break;
       default:
         this.state.statusKind = 0;
         this.state.statusRunning = false;
-        this.state.machineEnabled = this.state.machineSel >= 2;
         this.state.addDeviceEnabled = this.state.machineSel >= 2;
         break;
     }
@@ -203,17 +202,23 @@ struct Index {
   }
 
   private async selectMachine(name: string): Promise<void> {
-    const machine: Machine | null = await MachineController.getInstance().loadMachine(name);
-    if (machine === null) {
-      this.state.machineSel = 0;
-      this.state.setMachineLoaded(false);
-      this.state.storageDevices = [];
-      return;
+    try {
+      const machine: Machine | null = await MachineController.getInstance().loadMachine(name);
+      if (machine === null) {
+        this.state.machineSel = 0;
+        this.state.setMachineLoaded(false);
+        this.state.storageDevices = [];
+        promptAction.showToast({ message: '读取虚拟机失败：' + name });
+        return;
+      }
+      await this.reloadMachines();
+      const selected: number = this.savedMachineNames.indexOf(name);
+      this.state.machineSel = selected >= 0 ? selected + 2 : 0;
+      this.bindMachine(machine);
+    } catch (err) {
+      console.error(`selectMachine failed: ${JSON.stringify(err)}`);
+      promptAction.showToast({ message: '读取虚拟机失败：数据库未就绪' });
     }
-    await this.reloadMachines();
-    const selected: number = this.savedMachineNames.indexOf(name);
-    this.state.machineSel = selected >= 0 ? selected + 2 : 0;
-    this.bindMachine(machine);
   }
 
   private withValue(options: string[], value: string): string[] {
@@ -951,16 +956,21 @@ struct Index {
       seq++;
       name = '新虚拟机 ' + seq;
     }
-    const machine: Machine | null = await MachineController.getInstance().createMachine(name);
-    if (machine === null) {
-      promptAction.showToast({ message: $r('app.string.machine_name_exists') });
-      return;
+    try {
+      const machine: Machine | null = await MachineController.getInstance().createMachine(name);
+      if (machine === null) {
+        promptAction.showToast({ message: $r('app.string.machine_name_exists') });
+        return;
+      }
+      await this.reloadMachines();
+      const index: number = this.savedMachineNames.indexOf(name);
+      this.state.machineSel = index >= 0 ? index + 2 : 0;
+      this.bindMachine(machine);
+      promptAction.showToast({ message: '已创建 ' + name });
+    } catch (err) {
+      console.error(`createMachine failed: ${JSON.stringify(err)}`);
+      promptAction.showToast({ message: '创建虚拟机失败：数据库未就绪' });
     }
-    await this.reloadMachines();
-    const index: number = this.savedMachineNames.indexOf(name);
-    this.state.machineSel = index >= 0 ? index + 2 : 0;
-    this.bindMachine(machine);
-    promptAction.showToast({ message: '已创建 ' + name });
   }
 
   private async deleteMachine(): Promise<void> {
