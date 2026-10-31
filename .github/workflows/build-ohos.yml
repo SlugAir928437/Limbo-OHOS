@@ -56,7 +56,22 @@ jobs:
             curl ca-certificates xz-utils bzip2 file unzip autoconf automake libtool gettext git
           python3 -m pip install --upgrade 'meson>=1.3' ninja
 
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc \
+            /opt/hostedtoolcache/CodeQL /usr/local/share/boost || true
+          sudo apt-get clean
+          df -h /
+
+      - name: Cache HarmonyOS SDK
+        id: sdk-cache
+        uses: actions/cache@v4
+        with:
+          path: ohos-sdk
+          key: ohos-sdk-6.0-Release-v1
+
       - name: Download HarmonyOS SDK
+        if: steps.sdk-cache.outputs.cache-hit != 'true'
         run: |
           set -euo pipefail
           mkdir -p "$SDK_ROOT"
@@ -73,12 +88,43 @@ jobs:
             fi
           done
           test -f /tmp/ohos-sdk.tar.gz
-          tar -xzf /tmp/ohos-sdk.tar.gz -C "$SDK_ROOT"
-          NATIVE_DIR=$(find "$SDK_ROOT" -maxdepth 5 -type d -path '*/native' | head -n 1)
-          test -n "$NATIVE_DIR"
-          echo "OHOS_NDK_HOME=$NATIVE_DIR" >> "$GITHUB_ENV"
-          echo "使用 NDK: $NATIVE_DIR"
-          test -x "$NATIVE_DIR/llvm/bin/${CROSS_TRIPLE}-clang"
+          file /tmp/ohos-sdk.tar.gz
+          # tar -xf 自动识别 gzip/xz
+          tar -xf /tmp/ohos-sdk.tar.gz -C "$SDK_ROOT"
+          rm -f /tmp/ohos-sdk.tar.gz
+          du -sh "$SDK_ROOT"
+
+      - name: Locate HarmonyOS NDK
+        run: |
+          set -euo pipefail
+          # 优先 linux/native（包里同时含 windows/native）
+          NDK="$(find "$SDK_ROOT" -type d -path '*/linux/native' -print -quit)"
+          if [ -z "$NDK" ]; then
+            NDK="$(find "$SDK_ROOT" -type d -name native -print -quit)"
+          fi
+          test -n "$NDK"
+          test -d "$NDK/llvm/bin"
+          test -d "$NDK/sysroot"
+          echo "OHOS_NDK_HOME=$NDK" >> "$GITHUB_ENV"
+
+          LLVM_BIN="$NDK/llvm/bin"
+          if [ ! -x "$LLVM_BIN/${CROSS_TRIPLE}-clang" ]; then
+            echo "SDK 中没有 ${CROSS_TRIPLE}-clang，生成 clang wrapper"
+            WRAP_DIR="$GITHUB_WORKSPACE/.ohos-toolchain/bin"
+            mkdir -p "$WRAP_DIR"
+            for tool in clang clang++; do
+              cat > "$WRAP_DIR/${CROSS_TRIPLE}-${tool}" <<EOF
+          #!/bin/sh
+          exec "$LLVM_BIN/${tool}" --target=$CROSS_TRIPLE --sysroot="$NDK/sysroot" "\$@"
+          EOF
+              chmod +x "$WRAP_DIR/${CROSS_TRIPLE}-${tool}"
+            done
+            LLVM_BIN="$WRAP_DIR"
+          fi
+          echo "OHOS_LLVM_BIN=$LLVM_BIN" >> "$GITHUB_ENV"
+          echo "NDK: $NDK"
+          "$LLVM_BIN/${CROSS_TRIPLE}-clang" --version
+          df -h /
 
       - name: Prepare cross toolchain files
         run: |
@@ -86,8 +132,8 @@ jobs:
           mkdir -p "$BUILD_ROOT/toolchain" "$DEPS/lib/pkgconfig" "$DEPS/include"
           NDK="$OHOS_NDK_HOME"
           SYSROOT="$NDK/sysroot"
-          CC="$NDK/llvm/bin/${CROSS_TRIPLE}-clang"
-          CXX="$NDK/llvm/bin/${CROSS_TRIPLE}-clang++"
+          CC="$OHOS_LLVM_BIN/${CROSS_TRIPLE}-clang"
+          CXX="$OHOS_LLVM_BIN/${CROSS_TRIPLE}-clang++"
           AR="$NDK/llvm/bin/llvm-ar"
           RANLIB="$NDK/llvm/bin/llvm-ranlib"
           NM="$NDK/llvm/bin/llvm-nm"
@@ -175,8 +221,8 @@ jobs:
           set -euo pipefail
           NDK="$OHOS_NDK_HOME"
           SYSROOT="$NDK/sysroot"
-          CC="$NDK/llvm/bin/${CROSS_TRIPLE}-clang"
-          CXX="$NDK/llvm/bin/${CROSS_TRIPLE}-clang++"
+          CC="$OHOS_LLVM_BIN/${CROSS_TRIPLE}-clang"
+          CXX="$OHOS_LLVM_BIN/${CROSS_TRIPLE}-clang++"
           AR="$NDK/llvm/bin/llvm-ar"
           RANLIB="$NDK/llvm/bin/llvm-ranlib"
           NM="$NDK/llvm/bin/llvm-nm"
@@ -345,8 +391,8 @@ jobs:
           set -euo pipefail
           NDK="$OHOS_NDK_HOME"
           SYSROOT="$NDK/sysroot"
-          CC="$NDK/llvm/bin/${CROSS_TRIPLE}-clang"
-          CXX="$NDK/llvm/bin/${CROSS_TRIPLE}-clang++"
+          CC="$OHOS_LLVM_BIN/${CROSS_TRIPLE}-clang"
+          CXX="$OHOS_LLVM_BIN/${CROSS_TRIPLE}-clang++"
           AR="$NDK/llvm/bin/llvm-ar"
           RANLIB="$NDK/llvm/bin/llvm-ranlib"
           NM="$NDK/llvm/bin/llvm-nm"
@@ -392,7 +438,7 @@ jobs:
           set -euo pipefail
           NDK="$OHOS_NDK_HOME"
           SYSROOT="$NDK/sysroot"
-          CC="$NDK/llvm/bin/${CROSS_TRIPLE}-clang"
+          CC="$OHOS_LLVM_BIN/${CROSS_TRIPLE}-clang"
           mkdir -p "$GITHUB_WORKSPACE/dist"
 
           for TARGET in x86_64-softmmu aarch64-softmmu; do
