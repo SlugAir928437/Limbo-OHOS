@@ -138,22 +138,36 @@ jobs:
           echo "OHOS_NDK_HOME=$NDK" >> "$GITHUB_ENV"
 
           LLVM_BIN="$NDK/llvm/bin"
-          if [ ! -x "$LLVM_BIN/${CROSS_TRIPLE}-clang" ]; then
+          TOOLCHAIN_BIN="$GITHUB_WORKSPACE/.ohos-toolchain/bin"
+          mkdir -p "$TOOLCHAIN_BIN"
+
+          if [ -x "$LLVM_BIN/${CROSS_TRIPLE}-clang" ]; then
+            ln -sf "$LLVM_BIN/${CROSS_TRIPLE}-clang" "$TOOLCHAIN_BIN/${CROSS_TRIPLE}-clang"
+            ln -sf "$LLVM_BIN/${CROSS_TRIPLE}-clang++" "$TOOLCHAIN_BIN/${CROSS_TRIPLE}-clang++"
+          else
             echo "SDK 中没有 ${CROSS_TRIPLE}-clang，生成 clang wrapper"
-            WRAP_DIR="$GITHUB_WORKSPACE/.ohos-toolchain/bin"
-            mkdir -p "$WRAP_DIR"
             for tool in clang clang++; do
-              cat > "$WRAP_DIR/${CROSS_TRIPLE}-${tool}" <<EOF
+              cat > "$TOOLCHAIN_BIN/${CROSS_TRIPLE}-${tool}" <<EOF
           #!/bin/sh
           exec "$LLVM_BIN/${tool}" --target=$CROSS_TRIPLE --sysroot="$NDK/sysroot" "\$@"
           EOF
-              chmod +x "$WRAP_DIR/${CROSS_TRIPLE}-${tool}"
+              chmod +x "$TOOLCHAIN_BIN/${CROSS_TRIPLE}-${tool}"
             done
-            LLVM_BIN="$WRAP_DIR"
           fi
-          echo "OHOS_LLVM_BIN=$LLVM_BIN" >> "$GITHUB_ENV"
+
+          # QEMU configure 通过 cross-prefix 查找 gcc/g++/ar/nm/ranlib/strip
+          ln -sf "$TOOLCHAIN_BIN/${CROSS_TRIPLE}-clang" "$TOOLCHAIN_BIN/${CROSS_TRIPLE}-gcc"
+          ln -sf "$TOOLCHAIN_BIN/${CROSS_TRIPLE}-clang++" "$TOOLCHAIN_BIN/${CROSS_TRIPLE}-g++"
+          for tool in ar ranlib nm strip objcopy; do
+            ln -sf "$LLVM_BIN/llvm-$tool" "$TOOLCHAIN_BIN/${CROSS_TRIPLE}-$tool"
+          done
+
+          echo "OHOS_LLVM_BIN=$TOOLCHAIN_BIN" >> "$GITHUB_ENV"
+          echo "OHOS_CROSS_PREFIX=$TOOLCHAIN_BIN/${CROSS_TRIPLE}-" >> "$GITHUB_ENV"
+          echo "PATH=$TOOLCHAIN_BIN:$PATH" >> "$GITHUB_ENV"
+          export PATH="$TOOLCHAIN_BIN:$PATH"
           echo "NDK: $NDK"
-          "$LLVM_BIN/${CROSS_TRIPLE}-clang" --version
+          "$TOOLCHAIN_BIN/${CROSS_TRIPLE}-clang" --version
           df -h /
 
       - name: Prepare cross toolchain files
@@ -527,9 +541,8 @@ jobs:
                 --disable-tools \
                 --disable-guest-agent \
                 --disable-werror \
-                --cross-prefix="${CROSS_TRIPLE}-" \
+                --cross-prefix="$OHOS_CROSS_PREFIX" \
                 --cc="$CC" --cxx="$CXX" --objcc="$CC" \
-                --ar="$AR" --nm="$NM" --ranlib="$RANLIB" --strip="$STRIP" \
                 --host-cc="$(command -v gcc)" \
                 --extra-cflags="--target=$CROSS_TRIPLE --sysroot=$SYSROOT -fPIC -I$DEPS/include -I$SDL_INCLUDE" \
                 --extra-ldflags="--target=$CROSS_TRIPLE --sysroot=$SYSROOT -fuse-ld=lld -L$DEPS/lib -L$SDL_LIBDIR" \
