@@ -692,6 +692,9 @@ jobs:
     runs-on: ubuntu-22.04
     container:
       image: ghcr.io/dalongzhuazi/harmonyos-ci:api26r
+    defaults:
+      run:
+        shell: bash
     steps:
       - name: Checkout Limbo
         uses: actions/checkout@v4
