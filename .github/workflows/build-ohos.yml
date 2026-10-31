@@ -174,7 +174,7 @@ jobs:
           cat > "$PC_WRAPPER" <<EOF
           #!/bin/sh
           unset PKG_CONFIG_SYSROOT_DIR PKG_CONFIG_PATH
-          export PKG_CONFIG_LIBDIR="$DEPS/lib/pkgconfig:$SYSROOT/usr/lib/pkgconfig"
+          export PKG_CONFIG_LIBDIR="$DEPS/lib/pkgconfig"
           exec pkg-config "\$@"
           EOF
           chmod +x "$PC_WRAPPER"
@@ -230,7 +230,7 @@ jobs:
 
           # OHOS 的 EGL / GLES 开发文件不一定带 .pc，补两份最小描述给
           # libepoxy / virglrenderer / QEMU 使用。
-          for name in egl:EGL/egl.h:EGL:libEGL glesv3:GLES3/gl3.h:GLES3:libGLESv3; do
+          for name in egl:EGL/egl.h:EGL:libEGL glesv2:GLES2/gl2.h:GLES2:libGLESv2 glesv3:GLES3/gl3.h:GLES3:libGLESv3; do
             IFS=: read -r pc header incdir libname <<< "$name"
             cat > "$DEPS/lib/pkgconfig/$pc.pc" <<EOF
           prefix=$SYSROOT/usr
@@ -245,6 +245,17 @@ jobs:
           EOF
           done
 
+          # iconv 在 OHOS libc 中，提供 pc 避免 GLib 改用宿主 CMake 查找
+          cat > "$DEPS/lib/pkgconfig/iconv.pc" <<EOF
+          prefix=$SYSROOT/usr
+          includedir=$SYSROOT/usr/include
+          Name: iconv
+          Description: HarmonyOS libc iconv
+          Version: 1.0
+          Libs:
+          Cflags: -I\${includedir}
+          EOF
+
       - name: Build OHOS dependencies
         run: |
           set -euo pipefail
@@ -258,7 +269,7 @@ jobs:
           STRIP="$NDK/llvm/bin/llvm-strip"
           MESON_CROSS="$BUILD_ROOT/toolchain/ohos-meson.ini"
           CMAKE_TOOLCHAIN="$BUILD_ROOT/toolchain/ohos-cmake.cmake"
-          export PKG_CONFIG_LIBDIR="$DEPS/lib/pkgconfig:$SYSROOT/usr/lib/pkgconfig"
+          export PKG_CONFIG_LIBDIR="$DEPS/lib/pkgconfig"
           export PKG_CONFIG_PATH=
 
           fetch() {
@@ -425,7 +436,7 @@ jobs:
           RANLIB="$NDK/llvm/bin/llvm-ranlib"
           NM="$NDK/llvm/bin/llvm-nm"
           STRIP="$NDK/llvm/bin/llvm-strip"
-          export PKG_CONFIG_LIBDIR="$DEPS/lib/pkgconfig:$SYSROOT/usr/lib/pkgconfig"
+          export PKG_CONFIG_LIBDIR="$DEPS/lib/pkgconfig"
           export PKG_CONFIG_PATH=
 
           for TARGET in x86_64-softmmu aarch64-softmmu; do
