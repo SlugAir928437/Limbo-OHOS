@@ -391,7 +391,7 @@ jobs:
             -Dradeon=disabled -Damdgpu=disabled -Dnouveau=disabled \
             -Dvmwgfx=disabled -Dintel=disabled -Detnaviv=disabled -Dvc4=disabled
 
-          fetch "libepoxy-$EPOXY_VERSION" "https://github.com/anholt/libepoxy/releases/download/${EPOXY_VERSION}/libepoxy-${EPOXY_VERSION}.tar.gz"
+          fetch "libepoxy-$EPOXY_VERSION" "https://github.com/anholt/libepoxy/archive/refs/tags/${EPOXY_VERSION}.tar.gz"
           meson_build "libepoxy-$EPOXY_VERSION" -Dtests=false -Ddocs=false
 
           fetch "virglrenderer-$VIRGL_VERSION" "https://gitlab.freedesktop.org/virgl/virglrenderer/-/archive/${VIRGL_VERSION}/virglrenderer-${VIRGL_VERSION}.tar.gz"
