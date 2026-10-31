@@ -584,47 +584,36 @@ jobs:
           mkdir -p "$GITHUB_WORKSPACE/dist"
 
           BUILD_DIR="$BUILD_ROOT/qemu"
-          COMMON_OBJS="/tmp/objs-common.txt"
-
-          # 公共对象（libqemuutil、subprojects 等），排除两个目标各自的对象目录与可执行文件目录
-          find "$BUILD_DIR" -name '*.o' -type f \
-            | grep -v '/libqemu-x86_64-softmmu\.a\.p/' \
-            | grep -v '/libqemu-aarch64-softmmu\.a\.p/' \
-            | grep -v '/qemu-system-x86_64\.p/' \
-            | grep -v '/qemu-system-aarch64\.p/' \
-            | grep -v 'system_main.c.o' \
-            | grep -v '/tests/' \
-            | grep -v '/test/' \
-            | grep -v 'stubs_' \
-            > "$COMMON_OBJS"
-          echo "common objects: $(wc -l < "$COMMON_OBJS")"
 
           for TARGET in x86_64-softmmu aarch64-softmmu; do
             GUEST="${TARGET%-softmmu}"
-            OBJS="/tmp/objs-$GUEST.txt"
 
-            # QEMU 子项目库的实际路径随 Meson 配置变化，直接查找
-            SLIRP_LIB="$(find "$BUILD_DIR" -name 'libslirp.a' -print -quit)"
+            # QEMU 已把每个目标的全部对象（含按该目标 config 筛选后的
+            # libsystem/libcommon 对象）打进这个静态库，直接整体链接即可，
+            # 避免手动收集 .o 时把另一目标的 stub 版本也带进来。
+            ARCHIVE="$BUILD_DIR/libqemu-$GUEST-softmmu.a"
+            test -f "$ARCHIVE" || {
+              echo "找不到 $ARCHIVE" >&2
+              exit 1
+            }
+
+            # QEMU 子项目库的实际路径随 Meson 配置变化，优先在 build 内的 subprojects 查找
+            SLIRP_LIB="$(find "$BUILD_DIR/subprojects" -name 'libslirp.a' -print -quit 2>/dev/null || true)"
             if [ -z "$SLIRP_LIB" ]; then
-              SLIRP_LIB="$(find "$BUILD_DIR" -name 'libslirp.so*' -print -quit)"
+              SLIRP_LIB="$(find "$BUILD_DIR/subprojects" -name 'libslirp.so*' -print -quit 2>/dev/null || true)"
             fi
-            FDT_LIB="$(find "$BUILD_DIR" -name 'libfdt.a' -print -quit)"
+            FDT_LIB="$(find "$BUILD_DIR/subprojects" -name 'libfdt.a' -print -quit 2>/dev/null || true)"
+            if [ -z "$FDT_LIB" ]; then
+              FDT_LIB="$(find "$BUILD_DIR" -name 'libfdt.a' -print -quit 2>/dev/null || true)"
+            fi
+            echo "archive: $ARCHIVE"
             echo "slirp: ${SLIRP_LIB:-none}"
             echo "fdt: ${FDT_LIB:-none}"
-
-            # 该客户机专属对象 + 公共对象
-            {
-              find "$BUILD_DIR" -path "*/libqemu-$GUEST-softmmu.a.p/*" -name '*.o' -type f
-              find "$BUILD_DIR" -path "*/qemu-system-$GUEST.p/*" -name '*.o' -type f \
-                | grep -v 'main\.c\.o' || true
-              cat "$COMMON_OBJS"
-            } > "$OBJS"
-            echo "$GUEST objects: $(wc -l < "$OBJS")"
 
             "$CC" -shared -fPIC \
               --target="$CROSS_TRIPLE" --sysroot="$SYSROOT" -fuse-ld=lld \
               -o "$GITHUB_WORKSPACE/dist/libqemu-system-$GUEST.so" \
-              @"$OBJS" \
+              -Wl,--whole-archive "$ARCHIVE" -Wl,--no-whole-archive \
               -L"$DEPS/lib" -L"$SDL_LIBDIR" \
               ${SLIRP_LIB:-} \
               ${FDT_LIB:-} \
