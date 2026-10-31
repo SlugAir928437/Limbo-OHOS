@@ -374,7 +374,7 @@ jobs:
           (
             cd "$BUILD_ROOT/src/openssl-$OPENSSL_VERSION"
             ./Configure linux-aarch64 --prefix="$DEPS" --openssldir="$DEPS/ssl" \
-              no-shared no-tests no-docs -fPIC \
+              no-shared no-tests -fPIC \
               CC="$CC" CXX="$CXX" AR="$AR" RANLIB="$RANLIB" NM="$NM"
             make -j "$(nproc)"
             make install_sw
