@@ -30,6 +30,8 @@ env:
   DEPS: ${{ github.workspace }}/ohos-deps
   BUILD_ROOT: ${{ github.workspace }}/ohos-build
   CROSS_TRIPLE: aarch64-unknown-linux-ohos
+  # 原生库统一按 API 12（HarmonyOS NEXT 5.0.0）编译，与 compatibleSdkVersion 对齐
+  OHOS_API_LEVEL: '12'
   ZLIB_VERSION: '1.3.1'
   LIBFFI_VERSION: '3.4.6'
   PCRE2_VERSION: '10.44'
@@ -149,6 +151,16 @@ jobs:
           TOOLCHAIN_BIN="$GITHUB_WORKSPACE/.ohos-toolchain/bin"
           mkdir -p "$TOOLCHAIN_BIN"
 
+          # 带 API 版本的目标三元组：clang 识别 aarch64-unknown-linux-ohos12.0.0，
+          # 从而按 API 12 的头文件/可用性规则编译；旧 NDK 不接受时回退为无版本三元组
+          OHOS_TARGET_TRIPLE="${CROSS_TRIPLE}${OHOS_API_LEVEL}.0.0"
+          if ! echo 'int limbo_api_probe;' | "$LLVM_BIN/clang" --target="$OHOS_TARGET_TRIPLE" \
+              --sysroot="$NDK/sysroot" -x c -fsyntax-only - >/dev/null 2>&1; then
+            echo "::warning::当前 NDK 不支持带 API 版本的目标三元组，回退为 $CROSS_TRIPLE"
+            OHOS_TARGET_TRIPLE="$CROSS_TRIPLE"
+          fi
+          echo "OHOS_TARGET_TRIPLE=$OHOS_TARGET_TRIPLE" >> "$GITHUB_ENV"
+
           # 优先沿用 SDK 自带的 <triple>-clang 驱动（带 OHOS 专有的头文件/宏配置），
           # 仅在其外层包一层强制 -fPIC（QEMU 目标文件最终要链接成 .so）。
           if [ -x "$LLVM_BIN/${CROSS_TRIPLE}-clang" ]; then
@@ -159,7 +171,7 @@ jobs:
             echo "SDK 中没有 ${CROSS_TRIPLE}-clang，使用 clang + 显式 target/sysroot"
             REAL_CC="$LLVM_BIN/clang"
             REAL_CXX="$LLVM_BIN/clang++"
-            BASE_FLAGS="--target=$CROSS_TRIPLE --sysroot=$NDK/sysroot"
+            BASE_FLAGS="--target=$OHOS_TARGET_TRIPLE --sysroot=$NDK/sysroot"
           fi
 
           for tool in clang clang++; do
@@ -232,10 +244,10 @@ jobs:
           needs_exe_wrapper = true
 
           [built-in options]
-          c_args = ['--target=$CROSS_TRIPLE', '--sysroot=$SYSROOT', '-fPIC']
-          cpp_args = ['--target=$CROSS_TRIPLE', '--sysroot=$SYSROOT', '-fPIC']
-          c_link_args = ['--target=$CROSS_TRIPLE', '--sysroot=$SYSROOT', '-fuse-ld=lld']
-          cpp_link_args = ['--target=$CROSS_TRIPLE', '--sysroot=$SYSROOT', '-fuse-ld=lld']
+          c_args = ['--target=$OHOS_TARGET_TRIPLE', '--sysroot=$SYSROOT', '-fPIC']
+          cpp_args = ['--target=$OHOS_TARGET_TRIPLE', '--sysroot=$SYSROOT', '-fPIC']
+          c_link_args = ['--target=$OHOS_TARGET_TRIPLE', '--sysroot=$SYSROOT', '-fuse-ld=lld']
+          cpp_link_args = ['--target=$OHOS_TARGET_TRIPLE', '--sysroot=$SYSROOT', '-fuse-ld=lld']
 
           [host_machine]
           system = 'linux'
@@ -250,15 +262,15 @@ jobs:
           set(CMAKE_SYSROOT "$SYSROOT")
           set(CMAKE_C_COMPILER "$CC")
           set(CMAKE_CXX_COMPILER "$CXX")
-          set(CMAKE_C_COMPILER_TARGET "$CROSS_TRIPLE")
-          set(CMAKE_CXX_COMPILER_TARGET "$CROSS_TRIPLE")
+          set(CMAKE_C_COMPILER_TARGET "$OHOS_TARGET_TRIPLE")
+          set(CMAKE_CXX_COMPILER_TARGET "$OHOS_TARGET_TRIPLE")
           set(CMAKE_AR "$AR")
           set(CMAKE_RANLIB "$RANLIB")
           set(CMAKE_NM "$NM")
           set(CMAKE_STRIP "$STRIP")
-          set(CMAKE_C_FLAGS_INIT "--target=$CROSS_TRIPLE --sysroot=$SYSROOT -fPIC")
-          set(CMAKE_CXX_FLAGS_INIT "--target=$CROSS_TRIPLE --sysroot=$SYSROOT -fPIC")
-          set(CMAKE_EXE_LINKER_FLAGS_INIT "--target=$CROSS_TRIPLE --sysroot=$SYSROOT -fuse-ld=lld")
+          set(CMAKE_C_FLAGS_INIT "--target=$OHOS_TARGET_TRIPLE --sysroot=$SYSROOT -fPIC")
+          set(CMAKE_CXX_FLAGS_INIT "--target=$OHOS_TARGET_TRIPLE --sysroot=$SYSROOT -fPIC")
+          set(CMAKE_EXE_LINKER_FLAGS_INIT "--target=$OHOS_TARGET_TRIPLE --sysroot=$SYSROOT -fuse-ld=lld")
           set(CMAKE_FIND_ROOT_PATH "$DEPS" "$SYSROOT")
           set(CMAKE_FIND_ROOT_PATH_MODE_PROGRAM NEVER)
           set(CMAKE_FIND_ROOT_PATH_MODE_LIBRARY ONLY)
@@ -376,8 +388,8 @@ jobs:
             ./configure --host=aarch64-linux-gnu --prefix="$DEPS" \
               --enable-static --disable-shared --disable-docs \
               CC="$CC" CXX="$CXX" AR="$AR" RANLIB="$RANLIB" \
-              CFLAGS="--target=$CROSS_TRIPLE --sysroot=$SYSROOT -fPIC" \
-              LDFLAGS="--target=$CROSS_TRIPLE --sysroot=$SYSROOT -fuse-ld=lld"
+              CFLAGS="--target=$OHOS_TARGET_TRIPLE --sysroot=$SYSROOT -fPIC" \
+              LDFLAGS="--target=$OHOS_TARGET_TRIPLE --sysroot=$SYSROOT -fuse-ld=lld"
             make -j "$(nproc)"
             make install
           )
@@ -513,7 +525,8 @@ jobs:
             -DCMAKE_TOOLCHAIN_FILE="$NDK/build/cmake/ohos.toolchain.cmake" \
             -DCMAKE_BUILD_TYPE=Release \
             -DOHOS_ARCH=arm64-v8a -DOHOS_PLATFORM=OHOS \
-            -DOHOS_PLATFORM_LEVEL=21
+            -DOHOS_PLATFORM_LEVEL=${OHOS_API_LEVEL} \
+            -DOHOS_COMPATIBLE_SDK_VERSION=${OHOS_API_LEVEL}
           cmake --build "$BUILD_ROOT/build/sdl2" --target SDL2 -j "$(nproc)"
 
           SDL_LIB=$(find "$BUILD_ROOT/build/sdl2" -name 'libSDL2.so' -print -quit)
@@ -589,8 +602,8 @@ jobs:
               --cross-prefix="$OHOS_CROSS_PREFIX" \
               --cc="$CC" --cxx="$CXX" --objcc="$CC" \
               --host-cc="$(command -v gcc)" \
-              --extra-cflags="--target=$CROSS_TRIPLE --sysroot=$SYSROOT -fPIC -I$DEPS/include -I$SDL_INCLUDE -I$SDL_CONFIG_INCLUDE" \
-              --extra-ldflags="--target=$CROSS_TRIPLE --sysroot=$SYSROOT -fuse-ld=lld -L$DEPS/lib -L$SDL_LIBDIR $NDK/llvm/lib/aarch64-linux-ohos/libc++.a $NDK/llvm/lib/aarch64-linux-ohos/libc++abi.a $NDK/llvm/lib/aarch64-linux-ohos/libunwind.a" \
+              --extra-cflags="--target=$OHOS_TARGET_TRIPLE --sysroot=$SYSROOT -fPIC -I$DEPS/include -I$SDL_INCLUDE -I$SDL_CONFIG_INCLUDE" \
+              --extra-ldflags="--target=$OHOS_TARGET_TRIPLE --sysroot=$SYSROOT -fuse-ld=lld -L$DEPS/lib -L$SDL_LIBDIR $NDK/llvm/lib/aarch64-linux-ohos/libc++.a $NDK/llvm/lib/aarch64-linux-ohos/libc++abi.a $NDK/llvm/lib/aarch64-linux-ohos/libunwind.a" \
               --prefix="$BUILD_DIR/install"
             ninja -j "$(nproc)"
             # 该静态库 build_by_default=false（可执行文件直接用对象链接），
@@ -700,7 +713,7 @@ jobs:
             echo "fdt: ${FDT_LIB:-none}"
 
             "$CC" -shared -fPIC \
-              --target="$CROSS_TRIPLE" --sysroot="$SYSROOT" -fuse-ld=lld \
+              --target="$OHOS_TARGET_TRIPLE" --sysroot="$SYSROOT" -fuse-ld=lld \
               -o "$GITHUB_WORKSPACE/dist/libqemu-system-$GUEST.so" \
               -Wl,--whole-archive "$ARCHIVE" -Wl,--no-whole-archive \
               -L"$DEPS/lib" -L"$SDL_LIBDIR" \
