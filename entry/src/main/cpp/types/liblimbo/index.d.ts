@@ -30,3 +30,18 @@ export const setRefreshRateHz: (hz: number) => boolean;
 
 /** 请求整屏刷新。 */
 export const refreshScreen: (value: number) => boolean;
+
+/** 发送键盘组合（逗号分隔的 QKeyCode 名称，如 "ctrl,alt,delete"）。返回空字符串表示成功。 */
+export const sendKeyCombo: (keysCsv: string, holdMs: number) => string;
+
+/** 发送单个按键按下/抬起；返回空字符串表示成功。 */
+export const sendKeyEvent: (key: string, down: boolean) => string;
+
+/** 向客户机输入 ASCII 文本；返回空字符串表示成功。 */
+export const sendText: (text: string, delayMs: number) => string;
+
+/** 鼠标按键：left / middle / right；返回空字符串表示成功。 */
+export const sendMouseButton: (button: string, down: boolean) => string;
+
+/** 鼠标移动：relative=true 为相对位移，否则为 0..0x7fff 的绝对坐标。 */
+export const sendMouseMove: (relative: boolean, x: number, y: number) => string;

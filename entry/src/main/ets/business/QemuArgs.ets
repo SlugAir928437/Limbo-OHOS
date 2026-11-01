@@ -1,3 +1,7 @@
+import { ArchManager } from './ArchManager';
+import { FileUtils } from './FileUtils';
+import { LimboConfig } from './LimboConfig';
+import { LimboSettingsManager } from './LimboSettingsManager';
 import { Machine } from './Machine';
 
 /**
@@ -6,13 +10,20 @@ import { Machine } from './Machine';
  * HarmonyOS 版固定为 TCG：
  *  - 不生成 -enable-kvm / -accel kvm / gunyah / gzvm；
  *  - 不生成 GTK / AGL 显示参数，SDL 是唯一的本地显示后端；
- *  - 不包含 IA-64 相关参数（本版本只构建 qemu-system-x86_64）。
+ *  - 不包含 IA-64 相关参数（本版本只构建 x86_64 / aarch64 引擎）。
  */
 export class QemuArgs {
   static readonly QMP_PORT: number = 4444;
 
   static build(machine: Machine, dns: string): string[] {
-    const args: string[] = ['qemu-system-x86_64'];
+    const args: string[] = [ArchManager.qemuBinary()];
+
+    // 固件（BIOS / VGA ROM / option ROM / keymaps）随 HAP 打包，
+    // 运行时由 QemuFirmware 解到私有目录，QEMU 用 -L 指向该目录。
+    const dataDir: string = LimboSettingsManager.getQemuDataDir();
+    if (dataDir.length > 0 && FileUtils.exists(dataDir)) {
+      args.push('-L', dataDir);
+    }
 
     args.push('-name', machine.name);
     args.push('-accel', machine.enableMTTCG === 1 ? 'tcg,thread=multi' : 'tcg,thread=single');
@@ -25,20 +36,31 @@ export class QemuArgs {
       args.push('-cpu', machine.cpu);
     }
 
+    // 设置页配置的默认磁盘缓存（default 表示不追加 cache 参数）
+    const defaultCache: string = LimboSettingsManager.getDiskCache();
+
+    // aarch64 的 virt 机器没有 IDE/PS2；光驱使用 virtio-scsi
+    if (ArchManager.isArm64()) {
+      args.push('-device', 'virtio-scsi-pci,id=scsi0');
+    }
+
     QemuArgs.addHardDisk(args, 'hd0', machine.hdaPath, machine.hdaInterface,
-      machine.hdaFormat, machine.hdaCache, 0);
+      machine.hdaFormat, machine.hdaCache, 0, defaultCache);
     QemuArgs.addHardDisk(args, 'hd1', machine.hdbPath, machine.hdbInterface,
-      machine.hdbFormat, machine.hdbCache, 1);
+      machine.hdbFormat, machine.hdbCache, 1, defaultCache);
     QemuArgs.addHardDisk(args, 'hd2', machine.hdcPath, machine.hdcInterface,
-      machine.hdcFormat, machine.hdcCache, 2);
+      machine.hdcFormat, machine.hdcCache, 2, defaultCache);
     QemuArgs.addHardDisk(args, 'hd3', machine.hddPath, machine.hddInterface,
-      machine.hddFormat, machine.hddCache, 3);
+      machine.hddFormat, machine.hddCache, 3, defaultCache);
 
     QemuArgs.addDrive(args, machine.cdImagePath, machine.cdInterface, 2,
-      machine.cdFormat, null, true);
-    QemuArgs.addDrive(args, machine.fdaImagePath, 'floppy', 0, null, null, false);
-    QemuArgs.addDrive(args, machine.fdbImagePath, 'floppy', 1, null, null, false);
-    QemuArgs.addDrive(args, machine.sdImagePath, 'sd', 0, null, null, false);
+      machine.cdFormat, defaultCache, true);
+    // aarch64 virt 没有软驱/SD 控制器
+    if (!ArchManager.isArm64()) {
+      QemuArgs.addDrive(args, machine.fdaImagePath, 'floppy', 0, null, null, false, defaultCache);
+      QemuArgs.addDrive(args, machine.fdbImagePath, 'floppy', 1, null, null, false, defaultCache);
+      QemuArgs.addDrive(args, machine.sdImagePath, 'sd', 0, null, null, false, defaultCache);
+    }
 
     if (QemuArgs.isUsable(machine.sharedFolderPath)) {
       args.push('-virtfs', 'local,path=' + machine.sharedFolderPath
@@ -50,10 +72,14 @@ export class QemuArgs {
     QemuArgs.addAudioOptions(args, machine);
     QemuArgs.addNetworkOptions(args, machine, dns);
     QemuArgs.addUsbOptions(args, machine);
+    QemuArgs.addPeripheralOptions(args, machine);
     QemuArgs.addExtraParams(args, machine);
 
     // 暂停/恢复/快照都通过 QMP；stdin 监视器在 HarmonyOS 上没有意义
-    args.push('-qmp', 'tcp:127.0.0.1:' + QemuArgs.QMP_PORT + ',server=on,wait=off');
+    if (LimboSettingsManager.getEnableQmp()) {
+      const qmpAddress: string = LimboSettingsManager.getEnableExternalQmp() ? '0.0.0.0' : '127.0.0.1';
+      args.push('-qmp', 'tcp:' + qmpAddress + ':' + QemuArgs.QMP_PORT + ',server=on,wait=off');
+    }
     args.push('-monitor', 'none');
     return args;
   }
@@ -63,11 +89,12 @@ export class QemuArgs {
   }
 
   private static addDrive(args: string[], path: string | null, iface: string, index: number,
-                          format: string | null, cache: string | null, cdrom: boolean): void {
+                          format: string | null, cache: string | null, cdrom: boolean,
+                          fallbackCache: string): void {
     if (!QemuArgs.isUsable(path)) {
       return;
     }
-    const ifValue: string = iface.length > 0 ? iface : 'ide';
+    const ifValue: string = QemuArgs.effectiveInterface(iface, cdrom);
     let drive: string = 'file=' + path + ',if=' + ifValue + ',index=' + index;
     if (cdrom) {
       drive += ',media=cdrom,readonly=on';
@@ -75,31 +102,54 @@ export class QemuArgs {
     if (format !== null && format.length > 0) {
       drive += ',format=' + format;
     }
-    if (cache !== null && cache.length > 0) {
-      drive += ',cache=' + cache;
+    const effectiveCache: string = QemuArgs.effectiveCache(cache, fallbackCache);
+    if (effectiveCache.length > 0) {
+      drive += ',cache=' + effectiveCache;
     }
     args.push('-drive', drive);
   }
 
   /** NVMe 需要 -device 才能挂上，其余接口直接走 -drive if=。 */
   private static addHardDisk(args: string[], id: string, path: string | null, iface: string,
-                             format: string | null, cache: string | null, index: number): void {
+                             format: string | null, cache: string | null, index: number,
+                             fallbackCache: string): void {
     if (!QemuArgs.isUsable(path)) {
       return;
     }
-    if (iface === 'nvme') {
+    const ifValue: string = QemuArgs.effectiveInterface(iface, false);
+    if (ifValue === 'nvme') {
       let drive: string = 'file=' + path + ',if=none,id=' + id;
       if (format !== null && format.length > 0) {
         drive += ',format=' + format;
       }
-      if (cache !== null && cache.length > 0) {
-        drive += ',cache=' + cache;
+      const effectiveCache: string = QemuArgs.effectiveCache(cache, fallbackCache);
+      if (effectiveCache.length > 0) {
+        drive += ',cache=' + effectiveCache;
       }
       args.push('-drive', drive);
       args.push('-device', 'nvme,drive=' + id + ',serial=limbo' + index);
       return;
     }
-    QemuArgs.addDrive(args, path, iface, index, format, cache, false);
+    QemuArgs.addDrive(args, path, ifValue, index, format, cache, false, fallbackCache);
+  }
+
+  /** 空接口按架构取默认；ARM 上 IDE/SATA 不可用，自动换成 virtio / scsi。 */
+  private static effectiveInterface(iface: string, cdrom: boolean): string {
+    if (ArchManager.isArm64() && (iface === 'ide' || iface === 'sata')) {
+      return cdrom ? 'scsi' : 'virtio';
+    }
+    if (iface.length > 0) {
+      return iface;
+    }
+    return ArchManager.defaultDriveInterface(cdrom);
+  }
+
+  /** 设备未单独设置缓存时使用设置页的默认值；default 表示沿用 QEMU 默认。 */
+  private static effectiveCache(cache: string | null, fallbackCache: string): string {
+    if (cache !== null && cache.length > 0) {
+      return cache;
+    }
+    return fallbackCache.length > 0 && fallbackCache !== 'default' ? fallbackCache : '';
   }
 
   private static addBootOptions(args: string[], machine: Machine): void {
@@ -131,9 +181,11 @@ export class QemuArgs {
   private static addDisplayOptions(args: string[], machine: Machine): void {
     const ui: string = machine.getUI();
     if (ui === 'VNC') {
-      args.push('-vnc', '127.0.0.1:1');
+      const vncAddress: string = LimboSettingsManager.getEnableExternalVNC() ? '0.0.0.0' : '127.0.0.1';
+      args.push('-vnc', vncAddress + ':' + LimboConfig.DEFAULT_VNC_PORT);
     } else if (ui === 'SPICE') {
-      args.push('-spice', 'port=5930,disable-ticketing=on');
+      const spiceAddress: string = LimboSettingsManager.getEnableExternalSPICE() ? 'addr=0.0.0.0,' : '';
+      args.push('-spice', spiceAddress + 'port=' + LimboConfig.DEFAULT_SPICE_PORT + ',disable-ticketing=on');
     } else {
       // GTK / AGL 在 HarmonyOS 版本中不提供，统一落到 SDL
       args.push('-display', 'sdl');
@@ -197,6 +249,50 @@ export class QemuArgs {
     if (usb.length > 0 && usb !== 'None') {
       args.push('-device', usb);
     }
+  }
+
+  /** 鼠标/键盘设备：x86 默认 PS/2；ARM virt 默认 USB 键鼠。 */
+  private static addPeripheralOptions(args: string[], machine: Machine): void {
+    const mouse: string = QemuArgs.mouseDevice(machine.mouse);
+    const fallbackUsb: boolean = mouse.length === 0 && ArchManager.isArm64();
+    if (ArchManager.isArm64() && (mouse.startsWith('usb-') || fallbackUsb)
+      && (machine.usbController.length === 0 || machine.usbController === 'None')) {
+      // ARM virt 默认没有 USB 控制器；USB 键鼠需要显式挂一个
+      args.push('-device', 'qemu-xhci');
+    }
+    if (mouse.length > 0) {
+      args.push('-device', mouse);
+      if (mouse.startsWith('virtio-')) {
+        args.push('-device', 'virtio-keyboard-pci');
+      } else if (mouse.startsWith('usb-')) {
+        args.push('-device', 'usb-kbd');
+      }
+    } else if (ArchManager.isArm64()) {
+      args.push('-device', 'usb-kbd');
+      args.push('-device', 'usb-mouse');
+    }
+    if (machine.keyboard.length > 0) {
+      args.push('-k', machine.keyboard);
+    }
+  }
+
+  private static mouseDevice(value: string): string {
+    if (value.length === 0 || value === 'ps2') {
+      return '';
+    }
+    if (value.startsWith('usb-tablet')) {
+      return 'usb-tablet';
+    }
+    if (value === 'usb-mouse') {
+      return 'usb-mouse';
+    }
+    if (value.startsWith('virtio-tablet-pci')) {
+      return 'virtio-tablet-pci';
+    }
+    if (value.startsWith('virtio-multitouch-pci')) {
+      return 'virtio-multitouch-pci';
+    }
+    return value;
   }
 
   private static addExtraParams(args: string[], machine: Machine): void {

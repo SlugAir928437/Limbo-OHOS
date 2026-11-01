@@ -1,18 +1,26 @@
 import { promptAction, router } from '@kit.ArkUI';
 import { common } from '@kit.AbilityKit';
+import { util } from '@kit.ArkTS';
 import { DEVICE_TYPES, LimboUiState, Section, StorageDeviceUiState } from '../model/LimboUiState';
 import { limboState, StorageEditorParams } from '../model/LimboStore';
 import { LimboFont, LimboSize } from '../theme/LimboTheme';
 import { SectionCard } from '../components/SectionCard';
 import { LimboDropdown } from '../components/LimboDropdown';
 import { LabeledTextFieldRow, StatusDot, SwitchRow } from '../components/LimboRows';
+import { ConfirmDialog } from '../components/ConfirmDialog';
+import { TextInputDialog } from '../components/TextInputDialog';
+import { TextViewerDialog } from '../components/TextViewerDialog';
 import { ArchDefinitions } from '../business/ArchDefinitions';
+import { ArchDefinition, ArchManager } from '../business/ArchManager';
+import { BIOSImporter, BiosImportResult } from '../business/BIOSImporter';
 import { LimboConfig } from '../business/LimboConfig';
 import { LimboSettingsManager } from '../business/LimboSettingsManager';
 import { Machine } from '../business/Machine';
 import { MachineController, MachineStatus } from '../business/MachineController';
 import { MachineDatabase } from '../business/MachineDatabase';
 import { MachineProperty } from '../business/MachineProperty';
+import { MachineTransfer } from '../business/MachineTransfer';
+import { QemuFirmware } from '../business/QemuFirmware';
 import { StorageDevices } from '../business/StorageDevices';
 import { VmExecutor } from '../business/VmExecutor';
 
@@ -41,6 +49,61 @@ struct Index {
   @State state: LimboUiState = limboState;
   private savedMachineNames: string[] = [];
 
+  // 通用文本输入对话框（创建虚拟机 / 导出文件名）
+  @State inputTitle: string = '';
+  @State inputMessage: string = '';
+  @State inputInitial: string = '';
+  @State inputPlaceholder: string = '';
+  @State inputPassword: boolean = false;
+  private inputAction: number = 0;
+
+  // 确认对话框（删除虚拟机 / 丢弃已保存状态 / 切换架构）
+  @State confirmTitle: string = '';
+  @State confirmMessage: string = '';
+  private confirmAction: number = 0;
+  private pendingArchKey: string = '';
+
+  // 长文本查看对话框（日志 / 更新日志 / 许可证）
+  @State viewerTitle: string = '';
+  @State viewerContent: string = '';
+
+  private inputDialog: CustomDialogController = new CustomDialogController({
+    builder: TextInputDialog({
+      titleProvider: (): ResourceStr => this.inputTitle,
+      messageProvider: (): string => this.inputMessage,
+      initialProvider: (): string => this.inputInitial,
+      placeholderProvider: (): string => this.inputPlaceholder,
+      passwordProvider: (): boolean => this.inputPassword,
+      onConfirm: (value: string) => {
+        this.onInputConfirm(value);
+      }
+    }),
+    autoCancel: true,
+    alignment: DialogAlignment.Center
+  });
+
+  private confirmDialog: CustomDialogController = new CustomDialogController({
+    builder: ConfirmDialog({
+      titleProvider: (): ResourceStr => this.confirmTitle,
+      messageProvider: (): string => this.confirmMessage,
+      onConfirm: () => {
+        this.onConfirmAction();
+      }
+    }),
+    autoCancel: true,
+    alignment: DialogAlignment.Center
+  });
+
+  private viewerDialog: CustomDialogController = new CustomDialogController({
+    builder: TextViewerDialog({
+      titleProvider: (): ResourceStr => this.viewerTitle,
+      contentProvider: (): string => this.viewerContent,
+      emptyProvider: (): string => '暂无内容'
+    }),
+    autoCancel: true,
+    alignment: DialogAlignment.Center
+  });
+
   aboutToAppear(): void {
     this.initialize();
   }
@@ -57,6 +120,7 @@ struct Index {
       const context: common.Context = getContext(this) as common.Context;
       await MachineDatabase.getInstance().ensureReady(context);
       await LimboSettingsManager.ensureReady(context);
+      await ArchManager.initialize(context);
       await ArchDefinitions.ensureReady(context);
       this.refreshOptions();
       this.state.archLabel = LimboConfig.ARCH_LABEL;
@@ -349,26 +413,97 @@ struct Index {
   }
 
   private topMenu(): MenuElement[] {
-    const items: MenuElement[] = [
-      {
+    const items: MenuElement[] = [];
+    const status: MachineStatus = MachineController.getInstance().getStatus();
+    const running: boolean = status === MachineStatus.Running || status === MachineStatus.Saving;
+    const machine: Machine | null = MachineController.getInstance().getMachine();
+
+    if (!running) {
+      items.push({
         value: $r('app.string.create_machine'),
         action: () => {
-          this.createMachine();
+          this.promptCreateMachine();
         }
-      },
-      {
+      });
+      items.push({
         value: $r('app.string.delete_machine'),
         action: () => {
-          this.deleteMachine();
+          this.promptDeleteMachine();
         }
-      },
-      {
-        value: $r('app.string.help'),
-        action: () => {
-          promptAction.showToast({ message: $r('app.string.feature_not_migrated') });
-        }
+      });
+      if (machine !== null && machine.paused === 1) {
+        items.push({
+          value: $r('app.string.discard_saved_state'),
+          action: () => {
+            this.promptDiscardSavedState();
+          }
+        });
       }
-    ];
+      items.push({
+        value: $r('app.string.export_machines'),
+        action: () => {
+          this.promptExportMachines();
+        }
+      });
+      items.push({
+        value: $r('app.string.import_machines'),
+        action: () => {
+          this.importMachines();
+        }
+      });
+    }
+
+    items.push({
+      value: $r('app.string.import_bios_file'),
+      action: () => {
+        this.importBiosFile();
+      }
+    });
+
+    // 运行/暂停中切换架构会丢失当前虚拟机状态，因此只在空闲时提供
+    const busy: boolean = running || status === MachineStatus.Paused;
+    if (!busy) {
+      const other: ArchDefinition | null = ArchManager.getOther();
+      if (other !== null) {
+        items.push({
+          value: '切换架构：' + other.label,
+          action: () => {
+            this.promptSwitchArch(other.key, other.label);
+          }
+        });
+      }
+    }
+
+    items.push({
+      value: $r('app.string.settings'),
+      action: () => {
+        this.openSettings();
+      }
+    });
+    items.push({
+      value: $r('app.string.view_log'),
+      action: () => {
+        this.showLog();
+      }
+    });
+    items.push({
+      value: $r('app.string.changelog'),
+      action: () => {
+        this.showRawText('Changelog.md', '更新日志');
+      }
+    });
+    items.push({
+      value: $r('app.string.license'),
+      action: () => {
+        this.showRawText('LICENSE', '许可证');
+      }
+    });
+    items.push({
+      value: $r('app.string.exit'),
+      action: () => {
+        this.quitApp();
+      }
+    });
     return items;
   }
 
@@ -935,7 +1070,7 @@ struct Index {
       return;
     }
     if (index === 1) {
-      this.createMachine();
+      this.promptCreateMachine();
       return;
     }
     this.selectMachine(this.state.machines[index]);
@@ -949,13 +1084,27 @@ struct Index {
     this.applyStatus(MachineStatus.Stopped);
   }
 
-  private async createMachine(): Promise<void> {
+  private promptCreateMachine(): void {
+    this.inputAction = 1;
+    this.inputTitle = '创建虚拟机';
+    this.inputMessage = '';
+    this.inputInitial = this.nextMachineName();
+    this.inputPlaceholder = '虚拟机名称';
+    this.inputPassword = false;
+    this.inputDialog.open();
+  }
+
+  private nextMachineName(): string {
     let name: string = '新虚拟机';
     let seq: number = 1;
     while (this.savedMachineNames.indexOf(name) >= 0) {
       seq++;
       name = '新虚拟机 ' + seq;
     }
+    return name;
+  }
+
+  private async createMachine(name: string): Promise<void> {
     try {
       const machine: Machine | null = await MachineController.getInstance().createMachine(name);
       if (machine === null) {
@@ -973,11 +1122,23 @@ struct Index {
     }
   }
 
-  private async deleteMachine(): Promise<void> {
+  private promptDeleteMachine(): void {
     if (this.state.machineSel < 2) {
       promptAction.showToast({ message: $r('app.string.select_machine_first') });
       return;
     }
+    const machine: Machine | null = MachineController.getInstance().getMachine();
+    if (machine === null) {
+      promptAction.showToast({ message: $r('app.string.select_machine_first') });
+      return;
+    }
+    this.confirmAction = 1;
+    this.confirmTitle = '删除虚拟机';
+    this.confirmMessage = '确定要删除虚拟机“' + machine.name + '”吗？此操作不可撤销。';
+    this.confirmDialog.open();
+  }
+
+  private async deleteMachine(): Promise<void> {
     const deleted: boolean = await MachineController.getInstance().deleteMachine();
     if (!deleted) {
       promptAction.showToast({ message: $r('app.string.machine_delete_failed') });
@@ -991,12 +1152,179 @@ struct Index {
     promptAction.showToast({ message: $r('app.string.machine_deleted') });
   }
 
+  private promptDiscardSavedState(): void {
+    this.confirmAction = 2;
+    this.confirmTitle = '丢弃已保存状态';
+    this.confirmMessage = '确定要丢弃该虚拟机已保存的运行状态吗？';
+    this.confirmDialog.open();
+  }
+
+  private async discardSavedState(): Promise<void> {
+    await MachineController.getInstance().updateFieldNow(MachineProperty.PAUSED, '0');
+    this.applyStatus(MachineStatus.Ready);
+    promptAction.showToast({ message: '已丢弃保存的运行状态' });
+  }
+
+  private onInputConfirm(value: string): void {
+    if (this.inputAction === 1) {
+      this.createMachine(value);
+    } else if (this.inputAction === 2) {
+      this.exportMachines(value);
+    }
+  }
+
+  private onConfirmAction(): void {
+    if (this.confirmAction === 1) {
+      this.deleteMachine();
+    } else if (this.confirmAction === 2) {
+      this.discardSavedState();
+    } else if (this.confirmAction === 3) {
+      this.switchArchitecture(this.pendingArchKey);
+    }
+  }
+
+  private promptSwitchArch(key: string, label: string): void {
+    this.pendingArchKey = key;
+    this.confirmAction = 3;
+    this.confirmTitle = '切换模拟架构';
+    this.confirmMessage = '将切换到 ' + label
+      + '。每种架构的虚拟机列表独立保存，切换后需要重新选择或创建虚拟机。';
+    this.confirmDialog.open();
+  }
+
+  private async switchArchitecture(key: string): Promise<void> {
+    const context: common.Context = getContext(this) as common.Context;
+    const changed: boolean = await ArchManager.switchTo(context, key);
+    if (!changed) {
+      promptAction.showToast({ message: '切换架构失败' });
+      return;
+    }
+    // 重新加载当前架构的 CPU / 机型 / 网卡列表
+    await ArchDefinitions.ensureReady(context);
+
+    MachineController.getInstance().clearMachine();
+    this.savedMachineNames = [];
+    this.state.machineSel = 0;
+    this.state.storageDevices = [];
+    this.state.setMachineLoaded(false);
+    this.refreshOptions();
+    this.state.archLabel = LimboConfig.ARCH_LABEL;
+
+    await this.reloadMachines();
+    if (this.savedMachineNames.length > 0) {
+      await this.selectMachine(this.savedMachineNames[0]);
+    } else {
+      this.clearMachineState();
+    }
+    promptAction.showToast({ message: '已切换到 ' + LimboConfig.ARCH_LABEL });
+  }
+
+  private promptExportMachines(): void {
+    this.inputAction = 2;
+    this.inputTitle = '导出虚拟机';
+    this.inputMessage = '导出当前架构的全部虚拟机配置（CSV）。';
+    this.inputInitial = 'machines.csv';
+    this.inputPlaceholder = '文件名';
+    this.inputPassword = false;
+    this.inputDialog.open();
+  }
+
+  private async exportMachines(fileName: string): Promise<void> {
+    let name: string = fileName.trim();
+    if (!name.endsWith('.csv')) {
+      name += '.csv';
+    }
+    const context: common.Context = getContext(this) as common.Context;
+    const path: string = await MachineTransfer.exportToFile(context, name);
+    if (path.length === 0) {
+      promptAction.showToast({ message: '导出失败或已取消' });
+      return;
+    }
+    promptAction.showToast({ message: '虚拟机配置已导出' });
+  }
+
+  private async importMachines(): Promise<void> {
+    const context: common.Context = getContext(this) as common.Context;
+    const names: string[] = await MachineTransfer.importFromPicker(context);
+    if (names.length === 0) {
+      promptAction.showToast({ message: '未导入任何虚拟机' });
+      return;
+    }
+    this.state.machineSel = 0;
+    MachineController.getInstance().clearMachine();
+    this.state.storageDevices = [];
+    this.state.setMachineLoaded(false);
+    this.applyStatus(MachineStatus.Stopped);
+    await this.reloadMachines();
+    promptAction.showToast({ message: '已导入 ' + names.length + ' 台虚拟机' });
+  }
+
+  private async importBiosFile(): Promise<void> {
+    if (MachineController.getInstance().getMachine() === null) {
+      promptAction.showToast({ message: $r('app.string.select_machine_first') });
+      return;
+    }
+    const context: common.Context = getContext(this) as common.Context;
+    const result: BiosImportResult = await BIOSImporter.importFromPicker(context);
+    if (result.tooLarge) {
+      promptAction.showToast({ message: 'BIOS 文件不能超过 100 MB' });
+      return;
+    }
+    if (result.path.length === 0) {
+      promptAction.showToast({ message: '未导入 BIOS 文件' });
+      return;
+    }
+    this.state.biosOptions = this.withValue(this.state.biosOptions, result.path);
+    this.state.biosSel = this.indexOfValue(this.state.biosOptions, result.path);
+    await MachineController.getInstance().updateFieldNow(MachineProperty.BIOS, result.path);
+    promptAction.showToast({ message: 'BIOS 文件已导入' });
+  }
+
+  private openSettings(): void {
+    router.pushUrl({ url: 'pages/Settings' }).catch((err: Error) => {
+      console.error(`open settings failed: ${err.message}`);
+    });
+  }
+
+  private showLog(): void {
+    const error: string = MachineController.getInstance().getLastError();
+    this.viewerTitle = '查看日志';
+    this.viewerContent = error.length > 0 ? error :
+      '暂无错误信息。\n\n原生 QEMU 的运行日志写入系统 hilog（tag: Limbo），可在 DevEco Studio 中查看。';
+    this.viewerDialog.open();
+  }
+
+  private async showRawText(fileName: string, title: string): Promise<void> {
+    try {
+      const context: common.Context = getContext(this) as common.Context;
+      const content: Uint8Array = await context.resourceManager.getRawFileContent(fileName);
+      const decoder: util.TextDecoder = util.TextDecoder.create('utf-8');
+      this.viewerTitle = title;
+      this.viewerContent = decoder.decodeToString(content);
+      this.viewerDialog.open();
+    } catch (err) {
+      console.error(`read raw ${fileName} failed: ${JSON.stringify(err)}`);
+      promptAction.showToast({ message: '读取失败：' + fileName });
+    }
+  }
+
+  private quitApp(): void {
+    const context: common.UIAbilityContext = getContext(this) as common.UIAbilityContext;
+    context.terminateSelf().catch((err: Error) => {
+      console.error(`terminate failed: ${err.message}`);
+    });
+  }
+
   private async startVm(): Promise<void> {
     const machine: Machine | null = MachineController.getInstance().getMachine();
     if (this.state.machineSel < 2 || machine === null) {
       promptAction.showToast({ message: $r('app.string.select_machine_first') });
       return;
     }
+
+    // 确保 rawfile 中的 QEMU 固件已解到私有目录（-L 需要真实文件路径）
+    const context: common.Context = getContext(this) as common.Context;
+    await QemuFirmware.ensureReady(context);
 
     // 有原生 QEMU 引擎时：SDL 显示需要先建立 XComponent 的 SDL 原生节点
     if (VmExecutor.getInstance().isAvailable()) {

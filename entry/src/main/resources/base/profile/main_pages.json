@@ -2,6 +2,7 @@
   "src": [
     "pages/Index",
     "pages/StorageDeviceEditor",
-    "pages/VmDisplay"
+    "pages/VmDisplay",
+    "pages/Settings"
   ]
 }

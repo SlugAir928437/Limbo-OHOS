@@ -52,6 +52,21 @@ public:
   void SetRefreshRate(int hz);
   void RefreshScreen(int value);
 
+  /** 发送键盘组合（逗号分隔的 QKeyCode 名称，如 "ctrl,alt,delete"）。 */
+  std::string SendKeyCombo(const std::string &keysCsv, int holdMs);
+
+  /** 发送单个按键的按下/抬起事件（用于物理键盘的长按）。 */
+  std::string SendKeyEvent(const std::string &key, bool down);
+
+  /** 向客户机输入 ASCII 文本；delayMs 为字符之间的间隔。 */
+  std::string SendText(const std::string &text, int delayMs);
+
+  /** 鼠标按键（left / middle / right）。 */
+  std::string SendMouseButton(const std::string &button, bool down);
+
+  /** 鼠标移动：relative=true 时为相对位移，否则为 0..0x7fff 的绝对坐标。 */
+  std::string SendMouseMove(bool relative, int x, int y);
+
 private:
   LimboVm() = default;
   ~LimboVm() = default;
@@ -62,8 +77,11 @@ private:
   std::string ResolveLibPath(const std::string &preferredName);
   bool ApplyIntVariable(const char *name, int value);
   bool QmpCommand(const char *command);
+  /** 发送一条 QMP JSON 命令，返回原始响应（连接失败时为空）。 */
+  std::string QmpExecute(const std::string &commandJson);
 
   std::mutex mutex_;
+  std::mutex qmpMutex_;
   void *handle_ = nullptr;
   std::atomic<int> state_{LIMBO_VM_IDLE};
   int pendingScaleMode_ = -1;

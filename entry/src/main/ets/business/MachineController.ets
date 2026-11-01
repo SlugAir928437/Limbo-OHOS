@@ -161,8 +161,9 @@ export class MachineController {
         }
       } else if (executor.getState() === 0) {
         const args: string[] = QemuArgs.build(this.machine, LimboSettingsManager.getDnsServer());
-        // 缩放模式固定为等比缩放，VRR 目标交给原生层默认值
-        if (!executor.startVm(args, 1, 0)) {
+        // 显示缩放方式与可变刷新率来自设置页
+        if (!executor.startVm(args, LimboSettingsManager.getSDLScaleMode(),
+          LimboSettingsManager.getSDLRefreshRate())) {
           this.lastError = executor.getLastError();
           this.updateStatus(MachineStatus.Ready);
           return;

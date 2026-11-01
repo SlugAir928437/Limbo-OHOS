@@ -10,6 +10,7 @@ name: Build QEMU for HarmonyOS (TCG + SDL + SPICE + VirGL)
 #   - 随后把原生库打进 entry/libs，用 harmonyos-ci 的 API 26 command-line-tools
 #     镜像（ghcr.io/dalongzhuazi/harmonyos-ci:api26r）构建 unsigned HAP
 # 产物：可在运行时 dlopen 的 libqemu-system-x86_64.so / libqemu-system-aarch64.so
+#     以及 QEMU 固件 pc-bios（打包进 HAP rawfile，运行时由 -L 指向私有目录）
 
 on:
   workflow_dispatch:
@@ -597,6 +598,65 @@ jobs:
             ninja libqemu-x86_64-softmmu.a libqemu-aarch64-softmmu.a
           )
 
+      - name: Stage QEMU firmware for HAP
+        run: |
+          set -euo pipefail
+          SRC="$GITHUB_WORKSPACE/qemu/pc-bios"
+          BUILD_DIR="$BUILD_ROOT/qemu"
+          DEST="$GITHUB_WORKSPACE/dist/pc-bios"
+          rm -rf "$DEST"
+          mkdir -p "$DEST/keymaps"
+
+          # x86_64 / aarch64 机器、显示与网卡 option ROM 所需的固件
+          BLOBS=(
+            bios.bin bios-256k.bin bios-microvm.bin qboot.rom
+            ast27x0_bootrom.bin
+            vgabios.bin vgabios-stdvga.bin vgabios-cirrus.bin vgabios-vmware.bin
+            vgabios-qxl.bin vgabios-virtio.bin vgabios-ramfb.bin
+            vgabios-bochs-display.bin vgabios-ati.bin
+            efi-e1000.rom efi-e1000e.rom efi-eepro100.rom efi-ne2k_pci.rom
+            efi-pcnet.rom efi-rtl8139.rom efi-virtio.rom efi-vmxnet3.rom
+            pxe-e1000.rom pxe-eepro100.rom pxe-ne2k_pci.rom pxe-pcnet.rom
+            pxe-rtl8139.rom pxe-virtio.rom
+            kvmvapic.bin linuxboot_dma.bin multiboot_dma.bin pvh.bin
+          )
+          for f in "${BLOBS[@]}"; do
+            test -f "$SRC/$f"
+            cp "$SRC/$f" "$DEST/"
+          done
+
+          # EDK2 固件在构建目录中由 .bz2 解出；必要时直接解压源文件
+          for f in edk2-x86_64-code.fd edk2-i386-code.fd edk2-aarch64-code.fd; do
+            if [ -f "$BUILD_DIR/pc-bios/$f" ]; then
+              cp "$BUILD_DIR/pc-bios/$f" "$DEST/"
+            elif [ -f "$SRC/$f.bz2" ]; then
+              bzip2 -dc "$SRC/$f.bz2" > "$DEST/$f"
+            else
+              echo "缺少 $f" >&2
+              exit 1
+            fi
+          done
+
+          cp -a "$SRC/keymaps/." "$DEST/keymaps/"
+          test -f "$DEST/keymaps/en-us"
+
+          # manifest 供运行时把 rawfile 里的固件复制到应用私有目录；
+          # 首行的 QEMU 提交号可用于判断固件是否需要重新解包。
+          {
+            echo "# qemu=$(git -C "$GITHUB_WORKSPACE/qemu" rev-parse HEAD 2>/dev/null || echo unknown)"
+            for f in "${BLOBS[@]}"; do echo "$f"; done
+            echo "edk2-x86_64-code.fd"
+            echo "edk2-i386-code.fd"
+            echo "edk2-aarch64-code.fd"
+            find "$DEST/keymaps" -maxdepth 1 -type f -printf 'keymaps/%f\n' | sort
+          } > "$DEST/manifest.txt"
+
+          test -f "$DEST/bios-256k.bin"
+          test -f "$DEST/edk2-x86_64-code.fd"
+          test -f "$DEST/edk2-aarch64-code.fd"
+          ls -lh "$DEST" | sed -n '1,40p'
+          du -sh "$DEST"
+
       - name: Link dlopen-able shared libraries
         run: |
           set -euo pipefail
@@ -684,6 +744,7 @@ jobs:
           path: |
             dist/libqemu-system-*.so
             dist/libSDL2.so
+            dist/pc-bios
             dist/pkgconfig
             qemu-ohos-arm64-tcg.tar.gz
           if-no-files-found: error
@@ -721,6 +782,21 @@ jobs:
           cp dist/libqemu-system-aarch64.so entry/libs/arm64-v8a/
           cp dist/libSDL2.so entry/libs/arm64-v8a/
           ls -lh entry/libs/arm64-v8a
+
+      - name: Stage QEMU firmware into HAP rawfile
+        run: |
+          set -euo pipefail
+          test -d dist/pc-bios
+          DEST=entry/src/main/resources/rawfile/qemu/pc-bios
+          rm -rf "$DEST"
+          mkdir -p "$DEST"
+          cp -a dist/pc-bios/. "$DEST/"
+          test -f "$DEST/bios-256k.bin"
+          test -f "$DEST/edk2-x86_64-code.fd"
+          test -f "$DEST/edk2-aarch64-code.fd"
+          test -f "$DEST/manifest.txt"
+          test -f "$DEST/keymaps/en-us"
+          du -sh "$DEST"
 
       - name: Strip machine-local signing and test deps
         run: |

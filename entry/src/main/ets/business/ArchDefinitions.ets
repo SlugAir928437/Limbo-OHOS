@@ -1,33 +1,41 @@
 import { common } from '@kit.AbilityKit';
 import { util } from '@kit.ArkTS';
+import { ArchDefinition, ArchManager } from './ArchManager';
 import { LimboConfig } from './LimboConfig';
 
 /**
  * 架构相关的可选项（迁移自 Android ArchDefinitions）。
- * 选项来自 rawfile 中的 txt 列表，架构固定为 x86_64。
+ * 选项来自 rawfile 中的 txt 列表，按当前架构（x86_64 / arm64）加载。
  */
 export class ArchDefinitions {
   private static cpuValues: string[] = [];
   private static machineTypeValues: string[] = [];
   private static nicValues: string[] = [];
   private static soundValues: string[] = [];
+  private static armNicValues: string[] = [];
+  private static loadedArch: string = '';
   private static ready: Promise<void> | null = null;
 
   static ensureReady(context: common.Context): Promise<void> {
+    const arch: string = LimboConfig.ARCH;
     const existing: Promise<void> | null = ArchDefinitions.ready;
-    if (existing !== null) {
+    if (existing !== null && ArchDefinitions.loadedArch === arch) {
       return existing;
     }
+    ArchDefinitions.loadedArch = arch;
     const started: Promise<void> = ArchDefinitions.load(context);
     ArchDefinitions.ready = started;
     return started;
   }
 
   private static async load(context: common.Context): Promise<void> {
-    ArchDefinitions.cpuValues = await ArchDefinitions.readRawLines(context, 'x86_cpu.txt');
-    ArchDefinitions.machineTypeValues = await ArchDefinitions.readRawLines(context, 'x86_machine_types.txt');
+    const definition: ArchDefinition = ArchManager.getCurrent();
+    ArchDefinitions.cpuValues = await ArchDefinitions.readRawLines(context, definition.cpuFile);
+    ArchDefinitions.machineTypeValues = await ArchDefinitions.readRawLines(context, definition.machineFile);
     ArchDefinitions.nicValues = await ArchDefinitions.readRawLines(context, 'common_nic_cards.txt');
     ArchDefinitions.soundValues = await ArchDefinitions.readRawLines(context, 'common_soundcards.txt');
+    ArchDefinitions.armNicValues = definition.armNic
+      ? await ArchDefinitions.readRawLines(context, 'arm_nic_cards.txt') : [];
   }
 
   private static async readRawLines(context: common.Context, fileName: string): Promise<string[]> {
@@ -64,6 +72,9 @@ export class ArchDefinitions {
   }
 
   static getMachineTypeValues(): string[] {
+    if (ArchManager.isArm64()) {
+      return ArchDefinitions.machineTypeValues.slice();
+    }
     const values: string[] = ['Default'];
     for (let i = 0; i < ArchDefinitions.machineTypeValues.length; i++) {
       values.push(ArchDefinitions.machineTypeValues[i]);
@@ -85,7 +96,13 @@ export class ArchDefinitions {
   }
 
   static getVGAValues(): string[] {
-    return ['std', 'ati', 'qxl', 'cirrus', 'vmware', 'virtio-gpu-pci', 'virtio-gpu-gl-pci', 'nographic'];
+    const values: string[] = ['std', 'ati'];
+    // QXL 只在内核为 i386 的 QEMU 中默认编入；aarch64 构建不保证可用
+    if (!ArchManager.isArm64()) {
+      values.push('qxl');
+    }
+    values.push('cirrus', 'vmware', 'virtio-gpu-pci', 'virtio-gpu-gl-pci', 'nographic');
+    return values;
   }
 
   static getSoundcards(): string[] {
@@ -101,22 +118,32 @@ export class ArchDefinitions {
     for (let i = 0; i < ArchDefinitions.nicValues.length; i++) {
       values.push(ArchDefinitions.nicValues[i]);
     }
+    for (let i = 0; i < ArchDefinitions.armNicValues.length; i++) {
+      values.push(ArchDefinitions.armNicValues[i]);
+    }
     return values;
   }
 
   static getUsbControllerValues(): string[] {
+    if (ArchManager.isArm64()) {
+      // ich9/piix3 是 x86 芯片组内置的 USB 控制器
+      return ['None', 'qemu-xhci', 'nec-usb-xhci'];
+    }
     return ['None', 'qemu-xhci', 'nec-usb-xhci', 'ich9-usb-ehci1', 'piix3-usb-uhci'];
   }
 
   static getBootDevices(): string[] {
     const values: string[] = ['Default', 'CDROM', 'Hard Disk'];
-    if (LimboConfig.ENABLE_EMULATED_FLOPPY) {
+    if (LimboConfig.ENABLE_EMULATED_FLOPPY && !ArchManager.isArm64()) {
       values.push('Floppy');
     }
     return values;
   }
 
   static getBiosFirmwareValues(): string[] {
+    if (ArchManager.isArm64()) {
+      return ['ast27x0_bootrom.bin', 'edk2-aarch64-code.fd'];
+    }
     return ['bios-256k.bin', 'bios.bin', 'bios-microvm.bin', 'edk2-x86_64-code.fd'];
   }
 

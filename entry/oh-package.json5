@@ -1,10 +1,10 @@
 {
-  "name": "entry",
+  "name": "limbo",
   "version": "1.0.0",
-  "description": "Please describe the basic information.",
+  "description": "一个基于 QEMU 的 Harmony OS 模拟器。它目前支持在 ARM64 的 Harmony OS 设备上模拟 x86_64 和 Aarch64 架构。",
   "main": "",
-  "author": "",
-  "license": "",
+  "author": "Github@FreshingAir",
+  "license": "GPL-3.0 license",
   "dependencies": {
     "liblimbo.so": "file:./src/main/cpp/types/liblimbo",
     "libSDL2.so": "file:./src/main/cpp/types/libSDL2"

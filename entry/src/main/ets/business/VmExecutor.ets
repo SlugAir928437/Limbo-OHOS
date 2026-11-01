@@ -4,6 +4,11 @@ import {
   pause,
   refreshScreen,
   resume,
+  sendKeyCombo as nativeSendKeyCombo,
+  sendKeyEvent as nativeSendKeyEvent,
+  sendMouseButton as nativeSendMouseButton,
+  sendMouseMove as nativeSendMouseMove,
+  sendText as nativeSendText,
   setPaths,
   setRefreshRateHz,
   setScaleMode,
@@ -15,7 +20,7 @@ import {
  * HarmonyOS 原生执行体封装（对应 Android 的 com.limbo.emu.jni.VMExecutor）。
  *
  * 实际工作由 entry/src/main/cpp 的 liblimbo.so 完成：
- * 进程内 dlopen libqemu-system-x86_64.so，TCG 执行，SDL 显示。
+ * 进程内 dlopen libqemu-system-x86_64.so / libqemu-system-aarch64.so，TCG 执行，SDL 显示。
  * 不包含 KVM / Gunyah / GZVM 分支，也不包含 GTK 后端。
  */
 export class VmExecutor {
@@ -42,7 +47,7 @@ export class VmExecutor {
     }
   }
 
-  /** 是否随包提供了 QEMU 引擎（libqemu-system-x86_64.so）。 */
+  /** 是否随包提供了 QEMU 引擎（x86_64 / aarch64 任一可用即视为可用）。 */
   isAvailable(): boolean {
     if (!this.initialized) {
       return false;
@@ -157,6 +162,89 @@ export class VmExecutor {
       refreshScreen(1);
     } catch (err) {
       console.error(`refreshScreen failed: ${JSON.stringify(err)}`);
+    }
+  }
+
+  // ============================================================
+  // 输入注入：通过 QMP 发送键鼠事件到客户机
+  // ============================================================
+
+  /** 键盘组合（逗号分隔的 QKeyCode 名称，如 "ctrl,alt,delete"）。 */
+  sendKeyCombo(keysCsv: string, holdMs: number): boolean {
+    try {
+      const error: string = nativeSendKeyCombo(keysCsv, holdMs);
+      if (error.length > 0) {
+        this.lastError = error;
+        console.error(`sendKeyCombo failed: ${error}`);
+        return false;
+      }
+      return true;
+    } catch (err) {
+      this.lastError = JSON.stringify(err);
+      console.error(`sendKeyCombo exception: ${this.lastError}`);
+      return false;
+    }
+  }
+
+  /** 发送单个按键按下/抬起（物理键盘长按使用）。 */
+  sendKeyEvent(key: string, down: boolean): boolean {
+    try {
+      const error: string = nativeSendKeyEvent(key, down);
+      if (error.length > 0) {
+        this.lastError = error;
+        return false;
+      }
+      return true;
+    } catch (err) {
+      this.lastError = JSON.stringify(err);
+      return false;
+    }
+  }
+
+  /** 向客户机输入 ASCII 文本。 */
+  sendText(text: string, delayMs: number): boolean {
+    try {
+      const error: string = nativeSendText(text, delayMs);
+      if (error.length > 0) {
+        this.lastError = error;
+        console.error(`sendText failed: ${error}`);
+        return false;
+      }
+      return true;
+    } catch (err) {
+      this.lastError = JSON.stringify(err);
+      console.error(`sendText exception: ${this.lastError}`);
+      return false;
+    }
+  }
+
+  /** 鼠标按键：left / middle / right。 */
+  sendMouseButton(button: string, down: boolean): boolean {
+    try {
+      const error: string = nativeSendMouseButton(button, down);
+      if (error.length > 0) {
+        this.lastError = error;
+        return false;
+      }
+      return true;
+    } catch (err) {
+      this.lastError = JSON.stringify(err);
+      return false;
+    }
+  }
+
+  /** 鼠标移动：relative=true 为相对位移，否则为 0..0x7fff 的绝对坐标。 */
+  sendMouseMove(relative: boolean, x: number, y: number): boolean {
+    try {
+      const error: string = nativeSendMouseMove(relative, x, y);
+      if (error.length > 0) {
+        this.lastError = error;
+        return false;
+      }
+      return true;
+    } catch (err) {
+      this.lastError = JSON.stringify(err);
+      return false;
     }
   }
 }

@@ -1,11 +1,18 @@
 /**
  * Limbo 业务层常量（迁移自 Android com.limbo.emu.main.Config）。
- * HarmonyOS 端固定模拟 x86_64，其它架构的选项表暂不打包。
+ * 默认模拟 x86_64，可切换到 arm64（其它架构没有随包引擎）。
  */
 export class LimboConfig {
-  /** 当前模拟架构，与 Android Config.Arch.x86_64 对应。 */
-  static readonly ARCH: string = 'x86_64';
-  static readonly ARCH_LABEL: string = 'x86_64 (amd64)';
+  /** 当前模拟架构（可由 ArchManager 切换）。 */
+  static ARCH: string = 'x86_64';
+  static ARCH_LABEL: string = 'x86_64 (amd64)';
+  static readonly DEFAULT_ARCH: string = 'x86_64';
+
+  /** 切换当前架构标签（数据库查询与 QEMU 参数都以此为准）。 */
+  static setArch(key: string, label: string): void {
+    LimboConfig.ARCH = key;
+    LimboConfig.ARCH_LABEL = label;
+  }
 
   static readonly APP_NAME: string = 'Limbo Emulator';
 

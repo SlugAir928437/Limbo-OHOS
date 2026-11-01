@@ -178,6 +178,85 @@ napi_value NapiRefreshScreen(napi_env env, napi_callback_info info) {
   return MakeBool(env, true);
 }
 
+napi_value NapiSendKeyCombo(napi_env env, napi_callback_info info) {
+  size_t argc = 2;
+  napi_value argv[2] = {nullptr};
+  napi_get_cb_info(env, info, &argc, argv, nullptr, nullptr);
+  std::string keys;
+  int holdMs = 100;
+  if (argc >= 1) {
+    ReadString(env, argv[0], keys);
+  }
+  if (argc >= 2) {
+    ReadInt(env, argv[1], holdMs);
+  }
+  return MakeString(env, LimboVm::Instance().SendKeyCombo(keys, holdMs));
+}
+
+napi_value NapiSendKeyEvent(napi_env env, napi_callback_info info) {
+  size_t argc = 2;
+  napi_value argv[2] = {nullptr};
+  napi_get_cb_info(env, info, &argc, argv, nullptr, nullptr);
+  std::string key;
+  bool down = false;
+  if (argc >= 1) {
+    ReadString(env, argv[0], key);
+  }
+  if (argc >= 2) {
+    ReadBool(env, argv[1], down);
+  }
+  return MakeString(env, LimboVm::Instance().SendKeyEvent(key, down));
+}
+
+napi_value NapiSendText(napi_env env, napi_callback_info info) {
+  size_t argc = 2;
+  napi_value argv[2] = {nullptr};
+  napi_get_cb_info(env, info, &argc, argv, nullptr, nullptr);
+  std::string text;
+  int delayMs = 30;
+  if (argc >= 1) {
+    ReadString(env, argv[0], text);
+  }
+  if (argc >= 2) {
+    ReadInt(env, argv[1], delayMs);
+  }
+  return MakeString(env, LimboVm::Instance().SendText(text, delayMs));
+}
+
+napi_value NapiSendMouseButton(napi_env env, napi_callback_info info) {
+  size_t argc = 2;
+  napi_value argv[2] = {nullptr};
+  napi_get_cb_info(env, info, &argc, argv, nullptr, nullptr);
+  std::string button = "left";
+  bool down = false;
+  if (argc >= 1) {
+    ReadString(env, argv[0], button);
+  }
+  if (argc >= 2) {
+    ReadBool(env, argv[1], down);
+  }
+  return MakeString(env, LimboVm::Instance().SendMouseButton(button, down));
+}
+
+napi_value NapiSendMouseMove(napi_env env, napi_callback_info info) {
+  size_t argc = 3;
+  napi_value argv[3] = {nullptr};
+  napi_get_cb_info(env, info, &argc, argv, nullptr, nullptr);
+  bool relative = true;
+  int x = 0;
+  int y = 0;
+  if (argc >= 1) {
+    ReadBool(env, argv[0], relative);
+  }
+  if (argc >= 2) {
+    ReadInt(env, argv[1], x);
+  }
+  if (argc >= 3) {
+    ReadInt(env, argv[2], y);
+  }
+  return MakeString(env, LimboVm::Instance().SendMouseMove(relative, x, y));
+}
+
 } // namespace
 
 EXTERN_C_START
@@ -193,6 +272,11 @@ static napi_value Init(napi_env env, napi_value exports) {
     {"setScaleMode", nullptr, NapiSetScaleMode, nullptr, nullptr, nullptr, napi_default, nullptr},
     {"setRefreshRateHz", nullptr, NapiSetRefreshRateHz, nullptr, nullptr, nullptr, napi_default, nullptr},
     {"refreshScreen", nullptr, NapiRefreshScreen, nullptr, nullptr, nullptr, napi_default, nullptr},
+    {"sendKeyCombo", nullptr, NapiSendKeyCombo, nullptr, nullptr, nullptr, napi_default, nullptr},
+    {"sendKeyEvent", nullptr, NapiSendKeyEvent, nullptr, nullptr, nullptr, napi_default, nullptr},
+    {"sendText", nullptr, NapiSendText, nullptr, nullptr, nullptr, napi_default, nullptr},
+    {"sendMouseButton", nullptr, NapiSendMouseButton, nullptr, nullptr, nullptr, napi_default, nullptr},
+    {"sendMouseMove", nullptr, NapiSendMouseMove, nullptr, nullptr, nullptr, napi_default, nullptr},
   };
   napi_define_properties(env, exports, sizeof(descriptors) / sizeof(descriptors[0]), descriptors);
   return exports;

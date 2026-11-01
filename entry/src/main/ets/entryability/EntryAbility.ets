@@ -1,8 +1,10 @@
 import { AbilityConstant, ConfigurationConstant, UIAbility, Want } from '@kit.AbilityKit';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { window } from '@kit.ArkUI';
+import { ArchManager } from '../business/ArchManager';
 import { MachineDatabase } from '../business/MachineDatabase';
 import { LimboSettingsManager } from '../business/LimboSettingsManager';
+import { QemuFirmware } from '../business/QemuFirmware';
 import { VmExecutor } from '../business/VmExecutor';
 
 const DOMAIN = 0x0000;
@@ -17,7 +19,15 @@ export default class EntryAbility extends UIAbility {
     LimboSettingsManager.ensureReady(this.context).catch((err: Error) => {
       hilog.error(DOMAIN, 'testTag', 'Init settings failed: %{public}s', err.message);
     });
-    // 原生执行体：liblimbo.so + 随包的 libqemu-system-x86_64.so（TCG）
+    // 恢复上次选择的模拟架构（数据库查询按架构过滤）
+    ArchManager.initialize(this.context).catch((err: Error) => {
+      hilog.error(DOMAIN, 'testTag', 'Init arch failed: %{public}s', err.message);
+    });
+    // 提前把随 HAP 打包的 QEMU 固件解到私有目录，避免启动虚拟机时等待
+    QemuFirmware.ensureReady(this.context).catch((err: Error) => {
+      hilog.error(DOMAIN, 'testTag', 'Prepare QEMU firmware failed: %{public}s', err.message);
+    });
+    // 原生执行体：liblimbo.so + 随包的 libqemu-system-x86_64.so / libqemu-system-aarch64.so（TCG）
     VmExecutor.getInstance().init(this.context.filesDir + '/machines', this.context.filesDir);
   }
 

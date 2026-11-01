@@ -303,6 +303,42 @@
     {
       "name": "feature_not_migrated",
       "value": "该功能尚未迁移到 HarmonyOS"
+    },
+    {
+      "name": "discard_saved_state",
+      "value": "丢弃已保存状态"
+    },
+    {
+      "name": "export_machines",
+      "value": "导出虚拟机"
+    },
+    {
+      "name": "import_machines",
+      "value": "导入虚拟机"
+    },
+    {
+      "name": "import_bios_file",
+      "value": "导入 BIOS 文件"
+    },
+    {
+      "name": "settings",
+      "value": "设置"
+    },
+    {
+      "name": "view_log",
+      "value": "查看日志"
+    },
+    {
+      "name": "changelog",
+      "value": "更新日志"
+    },
+    {
+      "name": "license",
+      "value": "许可证"
+    },
+    {
+      "name": "exit",
+      "value": "退出"
     }
   ]
 }

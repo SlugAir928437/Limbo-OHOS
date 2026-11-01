@@ -93,14 +93,31 @@ export class Machine {
     }
   }
 
-  /** Android Machine#setDefaults 的 x86_64 分支。 */
+  /** Android Machine#setDefaults 按当前架构设置的默认值。 */
   private loadDefaults(): void {
     this.arch = LimboConfig.ARCH;
     this.cpu = 'Default';
-    this.machineType = 'pc';
     this.networkCard = 'Default';
-    this.disableTSC = 1;
     this.usbController = Machine.USB_CONTROLLER_NONE;
+    if (LimboConfig.ARCH === 'arm64') {
+      // aarch64 只有 virt / sbsa-ref 等 64 位机器；virt 没有 IDE/PS2
+      this.machineType = 'virt';
+      this.mouse = 'usb-tablet（修复鼠标）';
+      this.hdaInterface = 'virtio';
+      this.hdbInterface = 'virtio';
+      this.hdcInterface = 'virtio';
+      this.hddInterface = 'virtio';
+      this.cdInterface = 'scsi';
+      this.disableTSC = 0;
+      this.disableI8042 = 1;
+      // virt 没有内置 SeaBIOS，默认使用随包的 EDK2 AArch64 固件
+      this.bios = 'edk2-aarch64-code.fd';
+      // virt 使用 PCIe；virtio-gpu 是随包引擎里最稳的显示设备
+      this.vga = 'virtio-gpu-pci';
+    } else {
+      this.machineType = 'pc';
+      this.disableTSC = 1;
+    }
   }
 
   getUI(): string {

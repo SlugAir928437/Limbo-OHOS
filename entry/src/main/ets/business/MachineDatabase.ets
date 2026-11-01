@@ -204,6 +204,28 @@ export class MachineDatabase {
     }
   }
 
+  /** 当前架构的全部虚拟机（导出 CSV 使用）。 */
+  async getAllMachines(): Promise<Machine[]> {
+    const machines: Machine[] = [];
+    const sql: string = 'SELECT * FROM ' + LimboConfig.MACHINE_TABLE
+      + ' WHERE ' + MachineProperty.STATUS + ' IN (' + LimboConfig.STATUS_CREATED + ','
+      + LimboConfig.STATUS_PAUSED + ') AND ' + MachineProperty.ARCH + '=? ORDER BY '
+      + MachineProperty.MACHINE_NAME;
+    try {
+      const resultSet: relationalStore.ResultSet =
+        await this.requireStore().querySql(sql, [LimboConfig.ARCH]);
+      if (resultSet.goToFirstRow()) {
+        do {
+          machines.push(this.readMachine(resultSet));
+        } while (resultSet.goToNextRow());
+      }
+      resultSet.close();
+    } catch (err) {
+      console.error(`getAllMachines failed: ${JSON.stringify(err)}`);
+    }
+    return machines;
+  }
+
   async getMachine(machineName: string): Promise<Machine | null> {
     const sql: string = 'SELECT * FROM ' + LimboConfig.MACHINE_TABLE
       + ' WHERE ' + MachineProperty.STATUS + ' IN (' + LimboConfig.STATUS_CREATED + ','
