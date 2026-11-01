@@ -54,7 +54,7 @@ export class QemuArgs {
       machine.hddFormat, machine.hddCache, 3, defaultCache);
 
     QemuArgs.addDrive(args, machine.cdImagePath, machine.cdInterface, 2,
-      machine.cdFormat, defaultCache, true);
+      machine.cdFormat, null, true, defaultCache);
     // aarch64 virt 没有软驱/SD 控制器
     if (!ArchManager.isArm64()) {
       QemuArgs.addDrive(args, machine.fdaImagePath, 'floppy', 0, null, null, false, defaultCache);
