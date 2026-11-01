@@ -1,6 +1,6 @@
 /**
- * ohos_sdl2（ohos_sdl2_capi 分支）提供的 N-API（libSDL2.so）。
- * 使用方式：XComponent(NODE, libraryname: 'SDL2') + prepare() + createNativeNode()。
+ * ohos_sdl2（ohos_sdl2_capi 分支）提供的 N-API（libsdl2.so）。
+ * 使用方式：XComponent(NODE, libraryname: 'sdl2') + prepare() + createNativeNode()。
  */
 export interface SdlModule {
   /** 初始化 SDL 的运行环境，参数为 UI 侧回调对象。 */

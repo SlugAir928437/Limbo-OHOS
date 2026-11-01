@@ -1,5 +1,5 @@
 {
-  "name": "libSDL2.so",
+  "name": "libsdl2.so",
   "version": "1.0.0",
   "description": "SDL2 port for OpenHarmony (ohos_sdl2)",
   "main": "",

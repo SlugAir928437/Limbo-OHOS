@@ -54,7 +54,7 @@ struct VmDisplay {
         // ohos_sdl2 只认 RootXC 作为 SDL 窗口的根节点，不能改成别的 id
         id: 'RootXC',
         type: XComponentType.NODE,
-        libraryname: 'SDL2'
+        libraryname: 'sdl2'
       })
         .width('100%')
         .height('100%')

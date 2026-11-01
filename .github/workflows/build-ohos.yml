@@ -524,6 +524,16 @@ jobs:
               https://gitcode.com/CPF-ApplicationTPC/ohos_sdl2.git "$BUILD_ROOT/src/ohos_sdl2"
           fi
 
+          # HarmonyOS 要求随包 so 文件名全小写，libSDL2.so 含大写字母会被 hvigor 拒绝。
+          # 这里把上游产物名、soname 与 NAPI 模块名统一改成 sdl2：
+          #   libsdl2.so + nm_modname "sdl2" + XComponent(libraryname: 'sdl2')
+          SDL_CMAKE="$BUILD_ROOT/src/ohos_sdl2/CMakeLists.txt"
+          SDL_OHOS_SRC="$BUILD_ROOT/src/ohos_sdl2/src/core/ohos/SDL_ohos.cpp"
+          sed -i 's/OUTPUT_NAME "SDL2"/OUTPUT_NAME "sdl2"/' "$SDL_CMAKE"
+          sed -i 's/\.nm_modname = "SDL2"/.nm_modname = "sdl2"/' "$SDL_OHOS_SRC"
+          grep -q 'OUTPUT_NAME "sdl2"' "$SDL_CMAKE"
+          grep -q '\.nm_modname = "sdl2"' "$SDL_OHOS_SRC"
+
           rm -rf "$BUILD_ROOT/build/sdl2"
           cmake -S "$BUILD_ROOT/src/ohos_sdl2/ohos-project/entry/src/main/cpp" \
             -B "$BUILD_ROOT/build/sdl2" -G Ninja \
@@ -534,7 +544,7 @@ jobs:
             -DOHOS_COMPATIBLE_SDK_VERSION=${OHOS_API_LEVEL}
           cmake --build "$BUILD_ROOT/build/sdl2" --target SDL2 -j "$(nproc)"
 
-          SDL_LIB=$(find "$BUILD_ROOT/build/sdl2" -name 'libSDL2.so' -print -quit)
+          SDL_LIB=$(find "$BUILD_ROOT/build/sdl2" -name 'libsdl2.so' -print -quit)
           test -n "$SDL_LIB"
           SDL_INCLUDE="$BUILD_ROOT/src/ohos_sdl2/include"
           test -f "$SDL_INCLUDE/SDL.h"
@@ -554,7 +564,7 @@ jobs:
           Name: sdl2
           Description: Simple DirectMedia Layer for OpenHarmony
           Version: 2.0.12
-          Libs: -L\${libdir} -lSDL2
+          Libs: -L\${libdir} -lsdl2
           Cflags: -I\${includedir} -I$SDL_CONFIG_INCLUDE
           EOF
 
@@ -728,7 +738,7 @@ jobs:
               -lglib-2.0 -lgobject-2.0 -lgio-2.0 -lgmodule-2.0 \
               -lpixman-1 -lpcre2-8 -lffi \
               -lspice-server -lvirglrenderer -lepoxy -ldrm \
-              -ljpeg -lssl -lcrypto -lSDL2 \
+              -ljpeg -lssl -lcrypto -lsdl2 \
               -Wl,--end-group \
               "$NDK/llvm/lib/aarch64-linux-ohos/libc++.a" \
               "$NDK/llvm/lib/aarch64-linux-ohos/libc++abi.a" \
@@ -751,7 +761,7 @@ jobs:
           mkdir -p dist/pkgconfig
           cp "$DEPS/lib/pkgconfig/"*.pc dist/pkgconfig/ || true
           # Limbo 运行时同时需要 SDL2 的 N-API 库
-          cp "$SDL_LIB" dist/libSDL2.so
+          cp "$SDL_LIB" dist/libsdl2.so
           tar -czf qemu-ohos-arm64-tcg.tar.gz -C dist .
           ls -lh dist qemu-ohos-arm64-tcg.tar.gz
 
@@ -761,7 +771,7 @@ jobs:
           name: qemu-ohos-arm64-tcg
           path: |
             dist/libqemu-system-*.so
-            dist/libSDL2.so
+            dist/libsdl2.so
             dist/pc-bios
             dist/pkgconfig
             qemu-ohos-arm64-tcg.tar.gz
@@ -794,11 +804,11 @@ jobs:
       - name: Stage native libraries for HAP
         run: |
           set -euo pipefail
-          find . -maxdepth 3 -name 'libqemu-system-*.so' -o -maxdepth 3 -name 'libSDL2.so'
+          find . -maxdepth 3 -name 'libqemu-system-*.so' -o -maxdepth 3 -name 'libsdl2.so'
           mkdir -p entry/libs/arm64-v8a
           cp dist/libqemu-system-x86_64.so entry/libs/arm64-v8a/
           cp dist/libqemu-system-aarch64.so entry/libs/arm64-v8a/
-          cp dist/libSDL2.so entry/libs/arm64-v8a/
+          cp dist/libsdl2.so entry/libs/arm64-v8a/
           ls -lh entry/libs/arm64-v8a
 
       - name: Stage QEMU firmware into HAP rawfile

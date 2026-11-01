@@ -1,6 +1,6 @@
 import { common } from '@kit.AbilityKit';
 import { display } from '@kit.ArkUI';
-import sdl from 'libSDL2.so';
+import sdl from 'libsdl2.so';
 
 /**
  * SDL 的 UI 回调（ohos_sdl2 通过线程安全函数切回 UI 线程调用）。
@@ -48,7 +48,7 @@ class SdlUiCallback {
  *
  * 工作流程：
  *  1. prepare()：建立页面互斥量、EGL 驱动环境变量，并告知 SDL 屏幕分辨率与缩放密度；
- *  2. attachRootNode()：把 XComponent(NODE, libraryname: 'SDL2') 的根节点交给 SDL，
+ *  2. attachRootNode()：把 XComponent(NODE, libraryname: 'sdl2') 的根节点交给 SDL，
  *     SDL 会在该根节点下自建一个用于渲染的 XComponent；
  *  3. 之后 QEMU 的 -display sdl 才能成功创建 SDL 窗口。
  *

@@ -7,7 +7,7 @@
   "license": "GPL-3.0 license",
   "dependencies": {
     "liblimbo.so": "file:./src/main/cpp/types/liblimbo",
-    "libSDL2.so": "file:./src/main/cpp/types/libSDL2"
+    "libsdl2.so": "file:./src/main/cpp/types/libSDL2"
   }
 }
 
