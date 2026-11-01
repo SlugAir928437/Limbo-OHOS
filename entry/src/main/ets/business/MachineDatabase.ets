@@ -123,54 +123,60 @@ export class MachineDatabase {
       + ' ' + pad(date.getHours()) + ':' + pad(date.getMinutes()) + ':' + pad(date.getSeconds());
   }
 
+  /** 当前架构；极端情况下回退到默认架构，避免查询参数为空导致列表为空。 */
+  private static currentArch(): string {
+    const value: string = LimboConfig.ARCH;
+    return value.length > 0 ? value : LimboConfig.DEFAULT_ARCH;
+  }
+
   async insertMachine(machine: Machine): Promise<number> {
     const bucket: relationalStore.ValuesBucket = {
       'MACHINE_NAME': machine.name,
       'CPU': machine.cpu,
       'CPUNUM': machine.cpuNum,
       'MEMORY': machine.memory,
-      'HDA': machine.hdaPath,
+      'HDA': machine.hdaPath ?? '',
       'HDA_INTERFACE': machine.hdaInterface,
-      'HDA_FORMAT': machine.hdaFormat,
-      'HDA_CACHE': machine.hdaCache,
-      'HDB': machine.hdbPath,
+      'HDA_FORMAT': machine.hdaFormat ?? '',
+      'HDA_CACHE': machine.hdaCache ?? '',
+      'HDB': machine.hdbPath ?? '',
       'HDB_INTERFACE': machine.hdbInterface,
-      'HDB_FORMAT': machine.hdbFormat,
-      'HDB_CACHE': machine.hdbCache,
-      'HDC': machine.hdcPath,
+      'HDB_FORMAT': machine.hdbFormat ?? '',
+      'HDB_CACHE': machine.hdbCache ?? '',
+      'HDC': machine.hdcPath ?? '',
       'HDC_INTERFACE': machine.hdcInterface,
-      'HDC_FORMAT': machine.hdcFormat,
-      'HDC_CACHE': machine.hdcCache,
-      'HDD': machine.hddPath,
+      'HDC_FORMAT': machine.hdcFormat ?? '',
+      'HDC_CACHE': machine.hdcCache ?? '',
+      'HDD': machine.hddPath ?? '',
       'HDD_INTERFACE': machine.hddInterface,
-      'HDD_FORMAT': machine.hddFormat,
-      'HDD_CACHE': machine.hddCache,
-      'CDROM': machine.cdImagePath,
+      'HDD_FORMAT': machine.hddFormat ?? '',
+      'HDD_CACHE': machine.hddCache ?? '',
+      'CDROM': machine.cdImagePath ?? '',
       'CDROM_INTERFACE': machine.cdInterface,
-      'CDROM_FORMAT': machine.cdFormat,
-      'FDA': machine.fdaImagePath,
-      'FDB': machine.fdbImagePath,
-      'SD': machine.sdImagePath,
-      'SHARED_FOLDER': machine.sharedFolderPath,
+      'CDROM_FORMAT': machine.cdFormat ?? '',
+      'FDA': machine.fdaImagePath ?? '',
+      'FDB': machine.fdbImagePath ?? '',
+      'SD': machine.sdImagePath ?? '',
+      'SHARED_FOLDER': machine.sharedFolderPath ?? '',
       'SHARED_FOLDER_MODE': machine.sharedFolderMode,
       'BOOT_CONFIG': machine.bootDevice,
-      'NETCONFIG': machine.network,
+      'NETCONFIG': machine.network ?? '',
       'NICCONFIG': machine.networkCard,
       'VGA': machine.vga,
-      'SOUNDCARD': machine.soundCard,
+      'SOUNDCARD': machine.soundCard ?? '',
       'DISABLE_ACPI': machine.disableACPI,
       'DISABLE_HPET': machine.disableHPET,
       'DISABLE_TSC': machine.disableTSC,
       'DISABLE_FD_BOOT_CHK': machine.disableFdBootChk,
-      'KERNEL': machine.kernel,
-      'INITRD': machine.initRd,
-      'APPEND': machine.append,
-      'BIOS': machine.bios,
+      'KERNEL': machine.kernel ?? '',
+      'INITRD': machine.initRd ?? '',
+      'APPEND': machine.append ?? '',
+      'BIOS': machine.bios ?? '',
       'MACHINETYPE': machine.machineType,
-      'ARCH': machine.arch,
-      'EXTRA_PARAMS': machine.extraParams,
-      'HOSTFWD': machine.hostFwd,
-      'GUESTFWD': machine.guestFwd,
+      'ARCH': machine.arch.length > 0 ? machine.arch : MachineDatabase.currentArch(),
+      'EXTRA_PARAMS': machine.extraParams ?? '',
+      'HOSTFWD': machine.hostFwd ?? '',
+      'GUESTFWD': machine.guestFwd ?? '',
       'UI': machine.getUI(),
       'MOUSE': machine.mouse,
       'KEYBOARD': machine.keyboard,
@@ -179,11 +185,11 @@ export class MachineDatabase {
       'ACCEL_MODE': machine.accelMode,
       'DISABLE_I8042': machine.disableI8042,
       'ENABLE_NVRAM': machine.enableNvram,
-      'NVRAM_PATH': machine.nvramPath,
+      'NVRAM_PATH': machine.nvramPath ?? '',
       'USB_CONTROLLER': machine.usbController,
       'PAUSED': machine.paused,
       'LAST_UPDATED': MachineDatabase.now(),
-      'STATUS': LimboConfig.STATUS_CREATED
+      'STATUS': LimboConfig.STATUS_CREATED.toString()
     };
     try {
       return await this.requireStore().insert(LimboConfig.MACHINE_TABLE, bucket);
@@ -198,7 +204,7 @@ export class MachineDatabase {
     const sql: string = 'UPDATE ' + LimboConfig.MACHINE_TABLE + ' SET ' + property
       + '=? WHERE ' + MachineProperty.MACHINE_NAME + '=? AND ' + MachineProperty.ARCH + '=?';
     try {
-      await this.requireStore().executeSql(sql, [value, machineName, LimboConfig.ARCH]);
+      await this.requireStore().executeSql(sql, [value, machineName, MachineDatabase.currentArch()]);
     } catch (err) {
       console.error(`updateField failed: ${JSON.stringify(err)}`);
     }
@@ -208,12 +214,10 @@ export class MachineDatabase {
   async getAllMachines(): Promise<Machine[]> {
     const machines: Machine[] = [];
     const sql: string = 'SELECT * FROM ' + LimboConfig.MACHINE_TABLE
-      + ' WHERE ' + MachineProperty.STATUS + ' IN (' + LimboConfig.STATUS_CREATED + ','
-      + LimboConfig.STATUS_PAUSED + ') AND ' + MachineProperty.ARCH + '=? ORDER BY '
-      + MachineProperty.MACHINE_NAME;
+      + ' WHERE ' + MachineProperty.ARCH + '=? ORDER BY ' + MachineProperty.MACHINE_NAME;
     try {
       const resultSet: relationalStore.ResultSet =
-        await this.requireStore().querySql(sql, [LimboConfig.ARCH]);
+        await this.requireStore().querySql(sql, [MachineDatabase.currentArch()]);
       if (resultSet.goToFirstRow()) {
         do {
           machines.push(this.readMachine(resultSet));
@@ -228,12 +232,11 @@ export class MachineDatabase {
 
   async getMachine(machineName: string): Promise<Machine | null> {
     const sql: string = 'SELECT * FROM ' + LimboConfig.MACHINE_TABLE
-      + ' WHERE ' + MachineProperty.STATUS + ' IN (' + LimboConfig.STATUS_CREATED + ','
-      + LimboConfig.STATUS_PAUSED + ') AND ' + MachineProperty.MACHINE_NAME + '=? AND '
+      + ' WHERE ' + MachineProperty.MACHINE_NAME + '=? AND '
       + MachineProperty.ARCH + '=?';
     try {
       const resultSet: relationalStore.ResultSet =
-        await this.requireStore().querySql(sql, [machineName, LimboConfig.ARCH]);
+        await this.requireStore().querySql(sql, [machineName, MachineDatabase.currentArch()]);
       let machine: Machine | null = null;
       if (resultSet.goToFirstRow()) {
         machine = this.readMachine(resultSet);
@@ -249,11 +252,10 @@ export class MachineDatabase {
   async getMachineNames(): Promise<string[]> {
     const names: string[] = [];
     const sql: string = 'SELECT ' + MachineProperty.MACHINE_NAME + ' FROM ' + LimboConfig.MACHINE_TABLE
-      + ' WHERE ' + MachineProperty.STATUS + ' IN (' + LimboConfig.STATUS_CREATED + ','
-      + LimboConfig.STATUS_PAUSED + ') AND ' + MachineProperty.ARCH + '=? ORDER BY 1';
+      + ' WHERE ' + MachineProperty.ARCH + '=? ORDER BY 1';
     try {
       const resultSet: relationalStore.ResultSet =
-        await this.requireStore().querySql(sql, [LimboConfig.ARCH]);
+        await this.requireStore().querySql(sql, [MachineDatabase.currentArch()]);
       if (resultSet.goToFirstRow()) {
         do {
           names.push(resultSet.getString(0));
@@ -270,7 +272,7 @@ export class MachineDatabase {
     const sql: string = 'DELETE FROM ' + LimboConfig.MACHINE_TABLE + ' WHERE '
       + MachineProperty.MACHINE_NAME + '=? AND ' + MachineProperty.ARCH + '=?';
     try {
-      await this.requireStore().executeSql(sql, [machineName, LimboConfig.ARCH]);
+      await this.requireStore().executeSql(sql, [machineName, MachineDatabase.currentArch()]);
       return true;
     } catch (err) {
       console.error(`deleteMachine failed: ${JSON.stringify(err)}`);
@@ -283,7 +285,7 @@ export class MachineDatabase {
     machine.cpu = this.readString(resultSet, MachineProperty.CPU) ?? 'Default';
     machine.cpuNum = this.readInt(resultSet, MachineProperty.CPUNUM, 1);
     machine.memory = this.readInt(resultSet, MachineProperty.MEMORY, 128);
-    machine.arch = this.readString(resultSet, MachineProperty.ARCH) ?? LimboConfig.ARCH;
+    machine.arch = this.readString(resultSet, MachineProperty.ARCH) ?? MachineDatabase.currentArch();
     machine.machineType = this.readString(resultSet, MachineProperty.MACHINETYPE) ?? 'pc';
     machine.ui = this.readString(resultSet, MachineProperty.UI) ?? 'SDL';
     machine.mouse = this.readString(resultSet, MachineProperty.MOUSE) ?? 'ps2';

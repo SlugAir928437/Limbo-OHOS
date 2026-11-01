@@ -1108,7 +1108,8 @@ struct Index {
     try {
       const machine: Machine | null = await MachineController.getInstance().createMachine(name);
       if (machine === null) {
-        promptAction.showToast({ message: $r('app.string.machine_name_exists') });
+        const error: string = MachineController.getInstance().getLastError();
+        promptAction.showToast({ message: error.length > 0 ? error : $r('app.string.machine_name_exists') });
         return;
       }
       await this.reloadMachines();

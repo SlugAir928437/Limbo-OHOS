@@ -1,3 +1,4 @@
+import { ArchManager } from './ArchManager';
 import { LimboConfig } from './LimboConfig';
 import { LimboSettingsManager } from './LimboSettingsManager';
 import { Machine } from './Machine';
@@ -109,16 +110,20 @@ export class MachineController {
     this.updateStatus(MachineStatus.Stopped);
   }
 
-  /** 创建虚拟机（重名时返回 null）。 */
+  /** 创建虚拟机（重名时返回 null；写入失败时可通过 getLastError() 获取原因）。 */
   async createMachine(name: string): Promise<Machine | null> {
+    this.lastError = '';
     const existing: Machine | null = await MachineDatabase.getInstance().getMachine(name);
     if (existing !== null) {
       this.notifyEvent(MachineEvent.MachineCreateFailed, name);
       return null;
     }
     const machine: Machine = new Machine(name, true);
+    // 确保落库架构与当前架构完全一致（列表按 ARCH 过滤）
+    machine.arch = ArchManager.getCurrent().key;
     const rowId: number = await MachineDatabase.getInstance().insertMachine(machine);
     if (rowId < 0) {
+      this.lastError = '数据库写入失败';
       this.notifyEvent(MachineEvent.MachineCreateFailed, name);
       return null;
     }
