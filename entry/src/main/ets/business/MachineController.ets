@@ -33,8 +33,8 @@ type EventListener = (event: MachineEvent, detail: string) => void;
 /**
  * 虚拟机控制器（迁移自 Android MachineController）。
  *
- * HarmonyOS 端暂时没有 QEMU 执行体，因此 start/pause/stop/restart 只维护
- * 业务状态与数据库中的 PAUSED 字段；将来接入原生引擎时替换这四个方法即可。
+ * start/pause/stop/restart 既要维护业务状态与数据库中的 PAUSED 字段，
+ * 也要把真正的运行控制交给原生执行体（VmExecutor -> liblimbo.so 内的 QEMU）。
  */
 export class MachineController {
   private static readonly instance: MachineController = new MachineController();
@@ -149,7 +149,7 @@ export class MachineController {
   }
 
   // ============================================================
-  // 运行状态：有 QEMU 引擎时走原生执行体，否则退化为状态机演示
+  // 运行状态：交给原生执行体驱动 QEMU
   // ============================================================
 
   async start(): Promise<void> {
@@ -158,21 +158,26 @@ export class MachineController {
     }
     const executor: VmExecutor = VmExecutor.getInstance();
 
-    if (executor.isAvailable()) {
-      if (this.status === MachineStatus.Paused) {
-        if (!executor.resumeVm()) {
-          this.lastError = executor.getLastError();
-          return;
-        }
-      } else if (executor.getState() === 0) {
-        const args: string[] = QemuArgs.build(this.machine, LimboSettingsManager.getDnsServer());
-        // 显示缩放方式与可变刷新率来自设置页
-        if (!executor.startVm(args, LimboSettingsManager.getSDLScaleMode(),
-          LimboSettingsManager.getSDLRefreshRate())) {
-          this.lastError = executor.getLastError();
-          this.updateStatus(MachineStatus.Ready);
-          return;
-        }
+    if (!executor.isAvailable()) {
+      // 没有引擎时不能假装进入 Running，否则界面只剩黑屏、也拿不到失败原因
+      this.lastError = '未找到随包的 QEMU 引擎（libqemu-system-x86_64.so / libqemu-system-aarch64.so）';
+      this.updateStatus(MachineStatus.Ready);
+      return;
+    }
+
+    if (this.status === MachineStatus.Paused) {
+      if (!executor.resumeVm()) {
+        this.lastError = executor.getLastError();
+        return;
+      }
+    } else if (executor.getState() === 0) {
+      const args: string[] = QemuArgs.build(this.machine, LimboSettingsManager.getDnsServer());
+      // 显示缩放方式与可变刷新率来自设置页
+      if (!executor.startVm(args, LimboSettingsManager.getSDLScaleMode(),
+        LimboSettingsManager.getSDLRefreshRate())) {
+        this.lastError = executor.getLastError();
+        this.updateStatus(MachineStatus.Ready);
+        return;
       }
     }
 

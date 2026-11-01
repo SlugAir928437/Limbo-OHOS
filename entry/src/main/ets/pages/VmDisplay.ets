@@ -1,11 +1,11 @@
-import { display, promptAction, router, window } from '@kit.ArkUI';
+import { promptAction, router, window } from '@kit.ArkUI';
 import { common } from '@kit.AbilityKit';
 import { KeyCode } from '@kit.InputKit';
-import sdl from 'libSDL2.so';
 import { TextInputDialog } from '../components/TextInputDialog';
 import { LimboSettingsManager } from '../business/LimboSettingsManager';
 import { MachineController, MachineStatus } from '../business/MachineController';
 import { QemuFirmware } from '../business/QemuFirmware';
+import { SdlHost } from '../business/SdlHost';
 import { VmExecutor } from '../business/VmExecutor';
 
 /**
@@ -51,7 +51,8 @@ struct VmDisplay {
   build() {
     Stack({ alignContent: Alignment.TopEnd }) {
       XComponent({
-        id: 'limbo_sdl',
+        // ohos_sdl2 只认 RootXC 作为 SDL 窗口的根节点，不能改成别的 id
+        id: 'RootXC',
         type: XComponentType.NODE,
         libraryname: 'SDL2'
       })
@@ -135,18 +136,20 @@ struct VmDisplay {
     this.scaleMode = LimboSettingsManager.getSDLScaleMode();
     this.refreshRate = LimboSettingsManager.getSDLRefreshRate();
 
-    try {
-      const info = display.getDefaultDisplaySync();
-      sdl.setScaledDensity(info.scaledDensity);
-      sdl.createNativeNode('limbo_sdl', info.width, info.height, 0, 0);
-    } catch (err) {
-      console.error(`SDL createNativeNode failed: ${JSON.stringify(err)}`);
-    }
-
     await this.applyOrientation();
     await this.applyFullscreen();
 
     const context: common.Context = getContext(this) as common.Context;
+    // 先让 SDL 找到 RootXC 根节点，否则 QEMU 的 -display sdl 会创建窗口失败后退出，
+    // 页面只会停在黑屏上，看起来就像 QEMU 没有运行。
+    if (!SdlHost.prepare(context) || !SdlHost.attachRootNode()) {
+      this.statusText = 'SDL 显示初始化失败';
+      promptAction.showToast({ message: this.statusText });
+      await this.restoreWindow();
+      router.back();
+      return;
+    }
+
     await QemuFirmware.ensureReady(context);
 
     const controller: MachineController = MachineController.getInstance();
@@ -155,6 +158,7 @@ struct VmDisplay {
       const error: string = VmExecutor.getInstance().getLastError();
       this.statusText = error.length > 0 ? error : '虚拟机启动失败';
       promptAction.showToast({ message: this.statusText });
+      SdlHost.detachRootNode();
       await this.restoreWindow();
       router.back();
       return;
@@ -611,6 +615,7 @@ struct VmDisplay {
 
   private async stopAndExit(): Promise<void> {
     await MachineController.getInstance().stop();
+    SdlHost.detachRootNode();
     await this.restoreWindow();
     router.back();
   }

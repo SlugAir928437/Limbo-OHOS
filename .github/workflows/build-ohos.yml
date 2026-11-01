@@ -515,8 +515,13 @@ jobs:
           set -euo pipefail
           NDK="$OHOS_NDK_HOME"
 
+          # App 的 ArkTS 侧用的是 XComponent(NODE) + createNativeNode / setScaledDensity
+          # 这套 C-API，只有 ohos_sdl2_capi 分支提供；master 已改成 NodeContainer +
+          # AdapterTs 的新模型，没有这两个接口，SDL 拿不到根节点会让 SDL_CreateWindow
+          # 失败、QEMU 的 -display sdl 直接退出（表现就是 SDL 页面黑屏且 QEMU 未运行）。
           if [ ! -d "$BUILD_ROOT/src/ohos_sdl2" ]; then
-            git clone --depth 1 https://gitcode.com/CPF-ApplicationTPC/ohos_sdl2.git "$BUILD_ROOT/src/ohos_sdl2"
+            git clone --depth 1 --branch ohos_sdl2_capi \
+              https://gitcode.com/CPF-ApplicationTPC/ohos_sdl2.git "$BUILD_ROOT/src/ohos_sdl2"
           fi
 
           rm -rf "$BUILD_ROOT/build/sdl2"

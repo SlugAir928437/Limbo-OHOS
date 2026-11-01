@@ -5,6 +5,7 @@ import { ArchManager } from '../business/ArchManager';
 import { MachineDatabase } from '../business/MachineDatabase';
 import { LimboSettingsManager } from '../business/LimboSettingsManager';
 import { QemuFirmware } from '../business/QemuFirmware';
+import { SdlHost } from '../business/SdlHost';
 import { VmExecutor } from '../business/VmExecutor';
 
 const DOMAIN = 0x0000;
@@ -29,6 +30,11 @@ export default class EntryAbility extends UIAbility {
     });
     // 原生执行体：liblimbo.so + 随包的 libqemu-system-x86_64.so / libqemu-system-aarch64.so（TCG）
     VmExecutor.getInstance().init(this.context.filesDir + '/machines', this.context.filesDir);
+    // SDL 运行环境要在任何 XComponent(SDL2) 创建之前准备好，否则 SDL 拿不到根节点，
+    // QEMU 的 -display sdl 会创建窗口失败后直接退出（页面停在黑屏）。
+    if (!SdlHost.prepare(this.context)) {
+      hilog.error(DOMAIN, 'testTag', 'Init SDL environment failed');
+    }
   }
 
   onDestroy(): void {
