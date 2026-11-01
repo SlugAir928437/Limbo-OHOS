@@ -132,6 +132,21 @@ struct VmDisplay {
     return true;
   }
 
+  onPageShow(): void {
+    // 页面重新可见时恢复 SDL 渲染线程
+    SdlHost.setVisible(true);
+  }
+
+  onPageHide(): void {
+    // 页面不可见时阻塞 SDL 渲染线程（与官方示例的 notifySdlPageHide 一致）
+    SdlHost.setVisible(false);
+  }
+
+  aboutToDisappear(): void {
+    // 页面销毁：移除 SDL 根节点并通知退出，避免下次进入时残留旧节点
+    SdlHost.shutdown();
+  }
+
   private async prepare(): Promise<void> {
     this.scaleMode = LimboSettingsManager.getSDLScaleMode();
     this.refreshRate = LimboSettingsManager.getSDLRefreshRate();
