@@ -464,11 +464,16 @@ jobs:
           fetch "openssl-$OPENSSL_VERSION" "https://www.openssl.org/source/openssl-${OPENSSL_VERSION}.tar.gz"
           (
             cd "$BUILD_ROOT/src/openssl-$OPENSSL_VERSION"
+            # linux-x86_64 目标带 multilib=64，默认装到 lib64；统一装到 lib，
+            # 否则后续 -L$DEPS/lib 找不到 libssl.a / libcrypto.a
             ./Configure "$OPENSSL_TARGET" --prefix="$DEPS" --openssldir="$DEPS/ssl" \
+              --libdir=lib \
               no-shared no-tests -fPIC \
               CC="$CC" CXX="$CXX" AR="$AR" RANLIB="$RANLIB" NM="$NM"
             make -j "$(nproc)"
             make install_sw
+            test -f "$DEPS/lib/libssl.a"
+            test -f "$DEPS/lib/libcrypto.a"
           )
 
           # libjpeg-turbo（SPICE 的 MJPEG 编码需要）
