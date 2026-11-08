@@ -790,21 +790,28 @@ jobs:
             if [ "$GUEST" = x86_64 ]; then
               OTHER_GUEST=aarch64
             fi
+            # Meson 把各模块的静态库放在自己的子目录里（qom/libqom.a、
+            # util/libqemuutil.a、hw/core/libhwcore.a、monitor/libmonitor.a ...），
+            # 只在构建目录顶层找会漏掉它们，因此这里递归查找；
+            # tests / subprojects 的库不参与（前者与本 .so 无关，后两者单独链接）。
             EXTRA_LIBS=()
             while IFS= read -r lib; do
               EXTRA_LIBS+=("$lib")
-            done < <(find "$BUILD_DIR" -maxdepth 1 -name 'lib*.a' \
+            done < <(find "$BUILD_DIR" -type f -name 'lib*.a' \
+              ! -path '*/tests/*' \
+              ! -path '*/subprojects/*' \
               ! -name "libqemu-$GUEST-softmmu.a" \
               ! -name "libqemu-$OTHER_GUEST-softmmu.a" \
-              ! -name 'libcommon.a' ! -name 'libsystem.a' | sort)
+              ! -name 'libcommon.a' ! -name 'libsystem.a' | sort -u)
             if [ ${#EXTRA_LIBS[@]} -eq 0 ]; then
-              echo "没有找到 QEMU 通用静态归档（crypto/io/qmp/qemuutil 等）" >&2
+              echo "没有找到 QEMU 通用静态归档（qom/qemuutil/hwcore 等）" >&2
               exit 1
             fi
             echo "archive: $ARCHIVE"
             echo "slirp: ${SLIRP_LIB:-none}"
             echo "fdt: ${FDT_LIB:-none}"
             echo "extra libs: ${#EXTRA_LIBS[@]}"
+            printf '  %s\n' "${EXTRA_LIBS[@]}"
 
             "$CC" -shared -fPIC \
               --target="$OHOS_TARGET_TRIPLE" --sysroot="$SYSROOT" -fuse-ld=lld \
