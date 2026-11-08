@@ -778,6 +778,25 @@ jobs:
             libqemu-x86_64-softmmu.a libqemu-aarch64-softmmu.a \
             "${MODULE_ARCHIVES[@]}"
 
+          # system/main.c 定义了全局函数指针 qemu_main（ui/sdl2.c 会把它置空）。
+          # 本 .so 不链接 main()（入口由 liblimbo 通过 dlopen + dlsym 调用
+          # qemu_init/qemu_main_loop/qemu_cleanup），这里单独补齐该符号定义。
+          MAIN_COMPAT_OBJ="$BUILD_DIR/qemu-main-compat.o"
+          printf '%s\n' \
+            '/* Limbo 以库方式驱动 QEMU，不链接 system/main.c，' \
+            ' * 这里只提供它定义的全局函数指针，供 ui/sdl2.c 使用。 */' \
+            'int (*qemu_main)(void);' > "$BUILD_DIR/qemu-main-compat.c"
+          "$CC" -c -fPIC --target="$OHOS_TARGET_TRIPLE" --sysroot="$SYSROOT" \
+            -o "$MAIN_COMPAT_OBJ" "$BUILD_DIR/qemu-main-compat.c"
+
+          # glib 静态构建时 NLS 走 proxy-libintl 子项目，gettext 符号被重命名为
+          # g_libintl_*；libglib-2.0.a 自身不含这些实现，需要显式链入 libintl。
+          if [ -f "$DEPS/lib/libintl.a" ]; then
+            INTL_LIB="$DEPS/lib/libintl.a"
+          else
+            INTL_LIB="-lintl"
+          fi
+
           for TARGET in x86_64-softmmu aarch64-softmmu; do
             GUEST="${TARGET%-softmmu}"
 
@@ -814,6 +833,7 @@ jobs:
               --target="$OHOS_TARGET_TRIPLE" --sysroot="$SYSROOT" -fuse-ld=lld \
               -o "$GITHUB_WORKSPACE/dist/libqemu-system-$GUEST.so" \
               -Wl,--whole-archive "$ARCHIVE" -Wl,--no-whole-archive \
+              "$MAIN_COMPAT_OBJ" \
               -L"$DEPS/lib" -L"$SDL_LIBDIR" \
               ${SLIRP_LIB:-} \
               ${FDT_LIB:-} \
@@ -823,6 +843,7 @@ jobs:
               -lpixman-1 -lpcre2-8 -lffi \
               -lspice-server -lvirglrenderer -lepoxy -ldrm \
               -ljpeg -lssl -lcrypto -lsdl2 \
+              "$INTL_LIB" \
               -Wl,--end-group \
               "$NDK/llvm/lib/$ABI_TRIPLE/libc++.a" \
               "$NDK/llvm/lib/$ABI_TRIPLE/libc++abi.a" \
