@@ -206,8 +206,20 @@ jobs:
               REAL_COMPILER="$REAL_CXX"
             fi
             cat > "$TOOLCHAIN_BIN/${CROSS_TRIPLE}-${tool}" <<EOF
-          #!/bin/sh
-          exec "$REAL_COMPILER" $BASE_FLAGS "\$@" -fPIC
+          #!/bin/bash
+          # 交叉编译不允许搜索宿主系统头文件：部分依赖经 CMake 探测会把
+          # -I/usr/include 注入编译命令，宿主 glibc 的 stdint.h 会抢在 OHOS
+          # sysroot 之前被使用，进而找不到 bits/libc-header-start.h。
+          args=()
+          for a in "\$@"; do
+              case "\$a" in
+                  -I/usr/include*|-I/usr/local/include*|-isystem/usr/include*|-isystem/usr/local/include*|-idirafter/usr/include*|-idirafter/usr/local/include*)
+                      continue
+                      ;;
+              esac
+              args+=("\$a")
+          done
+          exec "$REAL_COMPILER" $BASE_FLAGS "\${args[@]}" -fPIC
           EOF
             chmod +x "$TOOLCHAIN_BIN/${CROSS_TRIPLE}-${tool}"
           done
@@ -519,6 +531,9 @@ jobs:
           if [ -f "$BUILD_ROOT/libdrm_freedreno.pc.bak" ]; then
             mv "$BUILD_ROOT/libdrm_freedreno.pc.bak" "$DEPS/lib/pkgconfig/libdrm_freedreno.pc"
           fi
+
+          # 诊断：交叉编译用的 pc 不应指向宿主系统头目录，命中则打印出来
+          grep -l 'includedir=/usr' "$DEPS"/lib/pkgconfig/*.pc || true
 
           # SPICE
           fetch "spice-protocol-$SPICE_PROTOCOL_VERSION" "https://gitlab.freedesktop.org/spice/spice-protocol/-/archive/v${SPICE_PROTOCOL_VERSION}/spice-protocol-v${SPICE_PROTOCOL_VERSION}.tar.gz"
