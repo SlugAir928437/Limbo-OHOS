@@ -464,19 +464,27 @@ jobs:
           cmake_build "libjpeg-turbo-$JPEG_VERSION" \
             -DENABLE_SHARED=OFF -DENABLE_STATIC=ON \
             -DWITH_SIMD=OFF -DWITH_TURBOJPEG=OFF
-          cat > "$DEPS/lib/pkgconfig/libjpeg.pc" <<EOF
+          # spice-common / spice-server 里 jpeg 的探测名是 "jpeg"（不是 "libjpeg"）。
+          # 只提供 libjpeg.pc 时 Meson 会回退到 CMake 的 FindJPEG，把宿主
+          # /usr/include 加进交叉编译的 include 路径，与 OHOS sysroot 的
+          # stdint.h 冲突（bits/libc-header-start.h 找不到）。
+          for pcname in libjpeg jpeg; do
+            cat > "$DEPS/lib/pkgconfig/$pcname.pc" <<EOF
           prefix=$DEPS
           exec_prefix=\${prefix}
           libdir=\${prefix}/lib
           includedir=\${prefix}/include
-          Name: libjpeg
+          Name: $pcname
           Description: JPEG image codec
           Version: $JPEG_VERSION
           Libs: -L\${libdir} -ljpeg
           Cflags: -I\${includedir}
           EOF
+          done
           test -f "$DEPS/lib/pkgconfig/libjpeg.pc"
+          test -f "$DEPS/lib/pkgconfig/jpeg.pc"
           test -f "$DEPS/lib/libjpeg.a"
+          test "$("$BUILD_ROOT/toolchain/ohos-pkg-config" --modversion jpeg)" = "$JPEG_VERSION"
 
           # libdrm / libepoxy / virglrenderer
           if [ ! -d "$BUILD_ROOT/src/libdrm-$LIBDRM_VERSION" ]; then
