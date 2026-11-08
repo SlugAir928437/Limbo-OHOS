@@ -760,9 +760,8 @@ jobs:
           for TARGET in x86_64-softmmu aarch64-softmmu; do
             GUEST="${TARGET%-softmmu}"
 
-            # QEMU 已把每个目标的全部对象（含按该目标 config 筛选后的
-            # libsystem/libcommon 对象）打进这个静态库，直接整体链接即可，
-            # 避免手动收集 .o 时把另一目标的 stub 版本也带进来。
+            # 每目标归档包含该 target 的架构对象，以及按 config 抽取的
+            # common/system 对象；其余通用归档在下面一起链入。
             ARCHIVE="$BUILD_DIR/libqemu-$GUEST-softmmu.a"
             if [ ! -f "$ARCHIVE" ]; then
               ninja -C "$BUILD_DIR" "libqemu-$GUEST-softmmu.a"
@@ -782,9 +781,30 @@ jobs:
             if [ -z "$FDT_LIB" ]; then
               FDT_LIB="$(find "$BUILD_DIR" -name 'libfdt.a' -print -quit 2>/dev/null || true)"
             fi
+            # QEMU 的每目标归档只包含按该 target 配置抽取的对象；crypto / io /
+            # qmp / qom / qemuutil / hwcore 等通用实现留在各自的静态归档里
+            # （QEMU 的可执行文件是把这些归档当作依赖对象链进去的）。只链每目标
+            # 归档会残留大量未定义符号，dlopen 时 BIND_NOW 会直接失败。
+            # libcommon.a / libsystem.a 的对象已被抽进每目标归档，重复链接会撞符号。
+            OTHER_GUEST=x86_64
+            if [ "$GUEST" = x86_64 ]; then
+              OTHER_GUEST=aarch64
+            fi
+            EXTRA_LIBS=()
+            while IFS= read -r lib; do
+              EXTRA_LIBS+=("$lib")
+            done < <(find "$BUILD_DIR" -maxdepth 1 -name 'lib*.a' \
+              ! -name "libqemu-$GUEST-softmmu.a" \
+              ! -name "libqemu-$OTHER_GUEST-softmmu.a" \
+              ! -name 'libcommon.a' ! -name 'libsystem.a' | sort)
+            if [ ${#EXTRA_LIBS[@]} -eq 0 ]; then
+              echo "没有找到 QEMU 通用静态归档（crypto/io/qmp/qemuutil 等）" >&2
+              exit 1
+            fi
             echo "archive: $ARCHIVE"
             echo "slirp: ${SLIRP_LIB:-none}"
             echo "fdt: ${FDT_LIB:-none}"
+            echo "extra libs: ${#EXTRA_LIBS[@]}"
 
             "$CC" -shared -fPIC \
               --target="$OHOS_TARGET_TRIPLE" --sysroot="$SYSROOT" -fuse-ld=lld \
@@ -794,6 +814,7 @@ jobs:
               ${SLIRP_LIB:-} \
               ${FDT_LIB:-} \
               -Wl,--start-group \
+              "${EXTRA_LIBS[@]}" \
               -lglib-2.0 -lgobject-2.0 -lgio-2.0 -lgmodule-2.0 \
               -lpixman-1 -lpcre2-8 -lffi \
               -lspice-server -lvirglrenderer -lepoxy -ldrm \
@@ -804,6 +825,7 @@ jobs:
               "$NDK/llvm/lib/$ABI_TRIPLE/libunwind.a" \
               -lEGL -lGLESv3 -lz -lm -lpthread -ldl \
               -Wl,--allow-shlib-undefined \
+              -Wl,--no-undefined \
               -Wl,-soname,libqemu-system-$GUEST.so
 
             file "$GITHUB_WORKSPACE/dist/libqemu-system-$GUEST.so"
@@ -812,6 +834,16 @@ jobs:
                 echo "缺少 qemu_init/qemu_main_loop/qemu_cleanup 导出" >&2
                 exit 1
               }
+
+            # 内部符号必须被定义（否则 dlopen 时 BIND_NOW 会因未定义符号失败）
+            for sym in AES_sbox Accelerator_lookup ImageFormat_lookup; do
+              "$NDK/llvm/bin/llvm-nm" -D --defined-only \
+                "$GITHUB_WORKSPACE/dist/libqemu-system-$GUEST.so" \
+                | grep -q " $sym$" || {
+                  echo "libqemu-system-$GUEST.so 缺少内部符号 $sym，通用静态归档未链全" >&2
+                  exit 1
+                }
+            done
           done
 
       - name: Package artifacts
