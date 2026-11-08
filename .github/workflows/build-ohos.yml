@@ -7,6 +7,8 @@ name: Build QEMU for HarmonyOS (TCG + SDL + SPICE + VirGL)
 #   - 显示：SDL（ohos_sdl2）；不构建 GTK
 #   - 可选栈：SPICE / VirGL / OpenGL
 #   - 不构建 qemu-system-ia64
+#   - 宿主 ABI：arm64-v8a（真机）与 x86_64（模拟器），同一套脚本按 matrix 分别
+#     交叉编译依赖库 / SDL2 / QEMU，各自产出 entry/libs/<abi> 的原生库
 #   - 随后把原生库打进 entry/libs，用 harmonyos-ci 的 API 26 command-line-tools
 #     镜像（ghcr.io/dalongzhuazi/harmonyos-ci:api26r）构建 unsigned HAP
 # 产物：可在运行时 dlopen 的 libqemu-system-x86_64.so / libqemu-system-aarch64.so
@@ -29,7 +31,6 @@ env:
   SDK_ROOT: ${{ github.workspace }}/ohos-sdk
   DEPS: ${{ github.workspace }}/ohos-deps
   BUILD_ROOT: ${{ github.workspace }}/ohos-build
-  CROSS_TRIPLE: aarch64-unknown-linux-ohos
   # 原生库统一按 API 12（HarmonyOS NEXT 5.0.0）编译，与 compatibleSdkVersion 对齐
   OHOS_API_LEVEL: '12'
   ZLIB_VERSION: '1.3.1'
@@ -49,6 +50,21 @@ jobs:
   build:
     runs-on: ubuntu-22.04
     timeout-minutes: 360
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # 真机：arm64-v8a；模拟器：x86_64
+          - arch: arm64-v8a
+            triple: aarch64-unknown-linux-ohos
+            openssl_target: linux-aarch64
+          - arch: x86_64
+            triple: x86_64-unknown-linux-ohos
+            openssl_target: linux-x86_64
+    env:
+      OHOS_ARCH: ${{ matrix.arch }}
+      CROSS_TRIPLE: ${{ matrix.triple }}
+      OPENSSL_TARGET: ${{ matrix.openssl_target }}
 
     steps:
       - name: Checkout Limbo
@@ -145,14 +161,23 @@ jobs:
           fi
           test -d "$NDK/llvm/bin"
           test -d "$NDK/sysroot"
+
+          # 该 SDK 是否提供当前 matrix 的宿主 ABI（x86_64 需要模拟器支持）
+          ABI_TRIPLE="${CROSS_TRIPLE%%-*}-linux-ohos"
+          if [ ! -d "$NDK/sysroot/usr/lib/$ABI_TRIPLE" ] || [ ! -d "$NDK/llvm/lib/$ABI_TRIPLE" ]; then
+            echo "当前 HarmonyOS SDK 不包含 $ABI_TRIPLE（OHOS_ARCH=$OHOS_ARCH）" >&2
+            find "$NDK/sysroot/usr/lib" -maxdepth 1 -type d -print >&2
+            exit 1
+          fi
           echo "OHOS_NDK_HOME=$NDK" >> "$GITHUB_ENV"
 
           LLVM_BIN="$NDK/llvm/bin"
           TOOLCHAIN_BIN="$GITHUB_WORKSPACE/.ohos-toolchain/bin"
           mkdir -p "$TOOLCHAIN_BIN"
 
-          # 带 API 版本的目标三元组：clang 识别 aarch64-unknown-linux-ohos12.0.0，
-          # 从而按 API 12 的头文件/可用性规则编译；旧 NDK 不接受时回退为无版本三元组
+          # 带 API 版本的目标三元组：clang 识别 aarch64-unknown-linux-ohos12.0.0（
+          # x86_64-unknown-linux-ohos12.0.0 同理），从而按 API 12 的头文件/可用性
+          # 规则编译；旧 NDK 不接受时回退为无版本三元组
           OHOS_TARGET_TRIPLE="${CROSS_TRIPLE}${OHOS_API_LEVEL}.0.0"
           if ! echo 'int limbo_api_probe;' | "$LLVM_BIN/clang" --target="$OHOS_TARGET_TRIPLE" \
               --sysroot="$NDK/sysroot" -x c -fsyntax-only - >/dev/null 2>&1; then
@@ -208,6 +233,9 @@ jobs:
           mkdir -p "$BUILD_ROOT/toolchain" "$DEPS/lib/pkgconfig" "$DEPS/include"
           NDK="$OHOS_NDK_HOME"
           SYSROOT="$NDK/sysroot"
+          # 目标 CPU / sysroot ABI 目录随 matrix 变化：aarch64 或 x86_64
+          TARGET_CPU="${CROSS_TRIPLE%%-*}"
+          ABI_TRIPLE="$TARGET_CPU-linux-ohos"
           CC="$OHOS_LLVM_BIN/${CROSS_TRIPLE}-clang"
           CXX="$OHOS_LLVM_BIN/${CROSS_TRIPLE}-clang++"
           AR="$NDK/llvm/bin/llvm-ar"
@@ -251,14 +279,14 @@ jobs:
 
           [host_machine]
           system = 'linux'
-          cpu_family = 'aarch64'
-          cpu = 'aarch64'
+          cpu_family = '$TARGET_CPU'
+          cpu = '$TARGET_CPU'
           endian = 'little'
           EOF
 
           cat > "$BUILD_ROOT/toolchain/ohos-cmake.cmake" <<EOF
           set(CMAKE_SYSTEM_NAME Linux)
-          set(CMAKE_SYSTEM_PROCESSOR aarch64)
+          set(CMAKE_SYSTEM_PROCESSOR $TARGET_CPU)
           set(CMAKE_SYSROOT "$SYSROOT")
           set(CMAKE_C_COMPILER "$CC")
           set(CMAKE_CXX_COMPILER "$CXX")
@@ -285,7 +313,7 @@ jobs:
             cat > "$DEPS/lib/pkgconfig/$pc.pc" <<EOF
           prefix=$SYSROOT/usr
           exec_prefix=\${prefix}
-          libdir=$SYSROOT/usr/lib/aarch64-linux-ohos
+          libdir=$SYSROOT/usr/lib/$ABI_TRIPLE
           includedir=$SYSROOT/usr/include
           Name: $pc
           Description: HarmonyOS $pc
@@ -311,6 +339,7 @@ jobs:
           set -euo pipefail
           NDK="$OHOS_NDK_HOME"
           SYSROOT="$NDK/sysroot"
+          TARGET_CPU="${CROSS_TRIPLE%%-*}"
           CC="$OHOS_LLVM_BIN/${CROSS_TRIPLE}-clang"
           CXX="$OHOS_LLVM_BIN/${CROSS_TRIPLE}-clang++"
           AR="$NDK/llvm/bin/llvm-ar"
@@ -385,7 +414,7 @@ jobs:
           fetch "libffi-$LIBFFI_VERSION" "https://github.com/libffi/libffi/releases/download/v${LIBFFI_VERSION}/libffi-${LIBFFI_VERSION}.tar.gz"
           (
             cd "$BUILD_ROOT/src/libffi-$LIBFFI_VERSION"
-            ./configure --host=aarch64-linux-gnu --prefix="$DEPS" \
+            ./configure --host=${TARGET_CPU}-linux-gnu --prefix="$DEPS" \
               --enable-static --disable-shared --disable-docs \
               CC="$CC" CXX="$CXX" AR="$AR" RANLIB="$RANLIB" \
               CFLAGS="--target=$OHOS_TARGET_TRIPLE --sysroot=$SYSROOT -fPIC" \
@@ -423,7 +452,7 @@ jobs:
           fetch "openssl-$OPENSSL_VERSION" "https://www.openssl.org/source/openssl-${OPENSSL_VERSION}.tar.gz"
           (
             cd "$BUILD_ROOT/src/openssl-$OPENSSL_VERSION"
-            ./Configure linux-aarch64 --prefix="$DEPS" --openssldir="$DEPS/ssl" \
+            ./Configure "$OPENSSL_TARGET" --prefix="$DEPS" --openssldir="$DEPS/ssl" \
               no-shared no-tests -fPIC \
               CC="$CC" CXX="$CXX" AR="$AR" RANLIB="$RANLIB" NM="$NM"
             make -j "$(nproc)"
@@ -539,7 +568,7 @@ jobs:
             -B "$BUILD_ROOT/build/sdl2" -G Ninja \
             -DCMAKE_TOOLCHAIN_FILE="$NDK/build/cmake/ohos.toolchain.cmake" \
             -DCMAKE_BUILD_TYPE=Release \
-            -DOHOS_ARCH=arm64-v8a -DOHOS_PLATFORM=OHOS \
+            -DOHOS_ARCH=${OHOS_ARCH} -DOHOS_PLATFORM=OHOS \
             -DOHOS_PLATFORM_LEVEL=${OHOS_API_LEVEL} \
             -DOHOS_COMPATIBLE_SDK_VERSION=${OHOS_API_LEVEL}
           cmake --build "$BUILD_ROOT/build/sdl2" --target SDL2 -j "$(nproc)"
@@ -568,11 +597,12 @@ jobs:
           Cflags: -I\${includedir} -I$SDL_CONFIG_INCLUDE
           EOF
 
-      - name: Configure and build QEMU (x86_64 + aarch64, TCG)
+      - name: Configure and build QEMU (host ${{ matrix.arch }}; guests x86_64 + aarch64, TCG)
         run: |
           set -euo pipefail
           NDK="$OHOS_NDK_HOME"
           SYSROOT="$NDK/sysroot"
+          ABI_TRIPLE="${CROSS_TRIPLE%%-*}-linux-ohos"
           CC="$OHOS_LLVM_BIN/${CROSS_TRIPLE}-clang"
           CXX="$OHOS_LLVM_BIN/${CROSS_TRIPLE}-clang++"
           AR="$NDK/llvm/bin/llvm-ar"
@@ -618,7 +648,7 @@ jobs:
               --cc="$CC" --cxx="$CXX" --objcc="$CC" \
               --host-cc="$(command -v gcc)" \
               --extra-cflags="--target=$OHOS_TARGET_TRIPLE --sysroot=$SYSROOT -fPIC -I$DEPS/include -I$SDL_INCLUDE -I$SDL_CONFIG_INCLUDE" \
-              --extra-ldflags="--target=$OHOS_TARGET_TRIPLE --sysroot=$SYSROOT -fuse-ld=lld -L$DEPS/lib -L$SDL_LIBDIR $NDK/llvm/lib/aarch64-linux-ohos/libc++.a $NDK/llvm/lib/aarch64-linux-ohos/libc++abi.a $NDK/llvm/lib/aarch64-linux-ohos/libunwind.a" \
+              --extra-ldflags="--target=$OHOS_TARGET_TRIPLE --sysroot=$SYSROOT -fuse-ld=lld -L$DEPS/lib -L$SDL_LIBDIR $NDK/llvm/lib/$ABI_TRIPLE/libc++.a $NDK/llvm/lib/$ABI_TRIPLE/libc++abi.a $NDK/llvm/lib/$ABI_TRIPLE/libunwind.a" \
               --prefix="$BUILD_DIR/install"
             ninja -j "$(nproc)"
             # 该静态库 build_by_default=false（可执行文件直接用对象链接），
@@ -690,6 +720,7 @@ jobs:
           set -euo pipefail
           NDK="$OHOS_NDK_HOME"
           SYSROOT="$NDK/sysroot"
+          ABI_TRIPLE="${CROSS_TRIPLE%%-*}-linux-ohos"
           CC="$OHOS_LLVM_BIN/${CROSS_TRIPLE}-clang"
           mkdir -p "$GITHUB_WORKSPACE/dist"
 
@@ -740,9 +771,9 @@ jobs:
               -lspice-server -lvirglrenderer -lepoxy -ldrm \
               -ljpeg -lssl -lcrypto -lsdl2 \
               -Wl,--end-group \
-              "$NDK/llvm/lib/aarch64-linux-ohos/libc++.a" \
-              "$NDK/llvm/lib/aarch64-linux-ohos/libc++abi.a" \
-              "$NDK/llvm/lib/aarch64-linux-ohos/libunwind.a" \
+              "$NDK/llvm/lib/$ABI_TRIPLE/libc++.a" \
+              "$NDK/llvm/lib/$ABI_TRIPLE/libc++abi.a" \
+              "$NDK/llvm/lib/$ABI_TRIPLE/libunwind.a" \
               -lEGL -lGLESv3 -lz -lm -lpthread -ldl \
               -Wl,--allow-shlib-undefined \
               -Wl,-soname,libqemu-system-$GUEST.so
@@ -762,19 +793,19 @@ jobs:
           cp "$DEPS/lib/pkgconfig/"*.pc dist/pkgconfig/ || true
           # Limbo 运行时同时需要 SDL2 的 N-API 库
           cp "$SDL_LIB" dist/libsdl2.so
-          tar -czf qemu-ohos-arm64-tcg.tar.gz -C dist .
-          ls -lh dist qemu-ohos-arm64-tcg.tar.gz
+          tar -czf "qemu-ohos-${OHOS_ARCH}-tcg.tar.gz" -C dist .
+          ls -lh dist "qemu-ohos-${OHOS_ARCH}-tcg.tar.gz"
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: qemu-ohos-arm64-tcg
+          name: qemu-ohos-${{ matrix.arch }}-tcg
           path: |
             dist/libqemu-system-*.so
             dist/libsdl2.so
             dist/pc-bios
             dist/pkgconfig
-            qemu-ohos-arm64-tcg.tar.gz
+            qemu-ohos-${{ matrix.arch }}-tcg.tar.gz
           if-no-files-found: error
           retention-days: 14
 
@@ -794,31 +825,39 @@ jobs:
       - name: Checkout Limbo
         uses: actions/checkout@v4
 
-      - name: Download native libraries
+      - name: Download native libraries (arm64-v8a)
         uses: actions/download-artifact@v4
         with:
-          name: qemu-ohos-arm64-tcg
+          name: qemu-ohos-arm64-v8a-tcg
           # 产物 artifact 内含 dist/ 前缀（上传时公共父目录是 workspace 根）
-          path: .
+          path: native/arm64-v8a
+
+      - name: Download native libraries (x86_64)
+        uses: actions/download-artifact@v4
+        with:
+          name: qemu-ohos-x86_64-tcg
+          path: native/x86_64
 
       - name: Stage native libraries for HAP
         run: |
           set -euo pipefail
-          find . -maxdepth 3 -name 'libqemu-system-*.so' -o -maxdepth 3 -name 'libsdl2.so'
-          mkdir -p entry/libs/arm64-v8a
-          cp dist/libqemu-system-x86_64.so entry/libs/arm64-v8a/
-          cp dist/libqemu-system-aarch64.so entry/libs/arm64-v8a/
-          cp dist/libsdl2.so entry/libs/arm64-v8a/
-          ls -lh entry/libs/arm64-v8a
+          for ABI in arm64-v8a x86_64; do
+            test -d "native/$ABI/dist"
+            mkdir -p "entry/libs/$ABI"
+            cp "native/$ABI/dist/libqemu-system-x86_64.so" "entry/libs/$ABI/"
+            cp "native/$ABI/dist/libqemu-system-aarch64.so" "entry/libs/$ABI/"
+            cp "native/$ABI/dist/libsdl2.so" "entry/libs/$ABI/"
+            ls -lh "entry/libs/$ABI"
+          done
 
       - name: Stage QEMU firmware into HAP rawfile
         run: |
           set -euo pipefail
-          test -d dist/pc-bios
+          test -d native/arm64-v8a/dist/pc-bios
           DEST=entry/src/main/resources/rawfile/qemu/pc-bios
           rm -rf "$DEST"
           mkdir -p "$DEST"
-          cp -a dist/pc-bios/. "$DEST/"
+          cp -a native/arm64-v8a/dist/pc-bios/. "$DEST/"
           test -f "$DEST/bios-256k.bin"
           test -f "$DEST/edk2-x86_64-code.fd"
           test -f "$DEST/edk2-aarch64-code.fd"

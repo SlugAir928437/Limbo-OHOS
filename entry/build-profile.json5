@@ -6,7 +6,8 @@
       "arguments": "-DOHOS_COMPATIBLE_SDK_VERSION=12",
       "cppFlags": "",
       "abiFilters": [
-        "arm64-v8a"
+        "arm64-v8a",
+        "x86_64"
       ]
     },
     "resOptions": {
