@@ -757,50 +757,75 @@ jobs:
           # 诊断：确认 QEMU 对象确实以 -fPIC 编译
           ninja -C "$BUILD_DIR" -t commands libcommon.a.p/cpu-common.c.o 2>/dev/null | tail -n 1 || true
 
+          # QEMU 的可执行文件直接把各模块的对象链接进去
+          # （executable(objects: lib.extract_all_objects(recursive: true))），
+          # 而 qom / qmp / crypto / io / hwcore 等模块的 static_library 都设了
+          # build_by_default=false，ninja all 不会产出 .a；构建目录顶层只有
+          # libqemuutil.a 和本 workflow 显式构建的每目标归档。
+          # 这里显式构建这些归档再链入，否则 .so 会残留大量未定义内部符号，
+          # dlopen 时 BIND_NOW 会直接失败。monitor.c 属于 qmp_ss（libqmp.a）。
+          MODULE_ARCHIVES=(
+            libqom.a libqemuutil.a libevent-loop-base.a
+            libauthz.a libcrypto.a libio.a libmigration.a
+            libblock.a libblockdev.a libqmp.a libchardev.a libhwcore.a libqemuaudio.a
+          )
+          ninja -C "$BUILD_DIR" \
+            libqemu-x86_64-softmmu.a libqemu-aarch64-softmmu.a \
+            "${MODULE_ARCHIVES[@]}"
+
           for TARGET in x86_64-softmmu aarch64-softmmu; do
             GUEST="${TARGET%-softmmu}"
 
-            # QEMU 的可执行文件是直接把各模块的对象链接进去的
-            # （executable(objects: lib.extract_all_objects(recursive: true))），
-            # 而 qom / crypto / io / hwcore / monitor 等模块的 static_library 都设了
-            # build_by_default=false，构建目录里根本不存在对应的 .a（顶层只有
-            # libqemuutil.a，以及本 workflow 显式构建的每目标归档）。
-            # 因此直接复用 QEMU 为 qemu-system-<guest> 生成的链接命令：取出其中的
-            # .o/.a 与 -l/-L，改造成 -shared 输出，保证内部符号一个不漏。
-            LINK_LINE="$(cd "$BUILD_DIR" && ninja -t commands "qemu-system-$GUEST" \
-              | grep -E -- "-o qemu-system-$GUEST( |\$)" | tail -n 1)"
-            if [ -z "$LINK_LINE" ]; then
-              echo "无法从 ninja 取得 qemu-system-$GUEST 的链接命令" >&2
+            ARCHIVE="$BUILD_DIR/libqemu-$GUEST-softmmu.a"
+            if [ ! -f "$ARCHIVE" ]; then
+              echo "找不到 $ARCHIVE" >&2
               exit 1
             fi
-            read -r -a LINK_TOKENS <<< "$LINK_LINE"
-            LINK_INPUTS=()
-            for tok in "${LINK_TOKENS[@]}"; do
-              case "$tok" in
-                *.o|*.a|-l*|-L*|-Wl,--start-group|-Wl,--end-group) LINK_INPUTS+=("$tok") ;;
-              esac
-            done
-            if [ ${#LINK_INPUTS[@]} -eq 0 ]; then
-              echo "qemu-system-$GUEST 的链接命令里没有解析到输入文件" >&2
-              exit 1
-            fi
-            echo "guest: $GUEST"
-            echo "link inputs: ${#LINK_INPUTS[@]}"
 
-            (
-              cd "$BUILD_DIR"
-              "$CC" -shared -fPIC \
-                --target="$OHOS_TARGET_TRIPLE" --sysroot="$SYSROOT" -fuse-ld=lld \
-                -o "$GITHUB_WORKSPACE/dist/libqemu-system-$GUEST.so" \
-                "${LINK_INPUTS[@]}" \
-                "$NDK/llvm/lib/$ABI_TRIPLE/libc++.a" \
-                "$NDK/llvm/lib/$ABI_TRIPLE/libc++abi.a" \
-                "$NDK/llvm/lib/$ABI_TRIPLE/libunwind.a" \
-                -lEGL -lGLESv3 -lz -lm -lpthread -ldl \
-                -Wl,--allow-shlib-undefined \
-                -Wl,--no-undefined \
-                -Wl,-soname,libqemu-system-$GUEST.so
-            )
+            # QEMU 子项目库的实际路径随 Meson 配置变化，优先在 build 内的 subprojects 查找
+            SLIRP_LIB="$(find "$BUILD_DIR/subprojects" -name 'libslirp.a' -print -quit 2>/dev/null || true)"
+            if [ -z "$SLIRP_LIB" ]; then
+              SLIRP_LIB="$(find "$BUILD_DIR/subprojects" -name 'libslirp.so*' -print -quit 2>/dev/null || true)"
+            fi
+            FDT_LIB="$(find "$BUILD_DIR/subprojects" -name 'libfdt.a' -print -quit 2>/dev/null || true)"
+            if [ -z "$FDT_LIB" ]; then
+              FDT_LIB="$(find "$BUILD_DIR" -name 'libfdt.a' -print -quit 2>/dev/null || true)"
+            fi
+
+            EXTRA_LIBS=()
+            for name in "${MODULE_ARCHIVES[@]}"; do
+              if [ ! -f "$BUILD_DIR/$name" ]; then
+                echo "缺少 $BUILD_DIR/$name" >&2
+                exit 1
+              fi
+              EXTRA_LIBS+=("$BUILD_DIR/$name")
+            done
+            echo "archive: $ARCHIVE"
+            echo "slirp: ${SLIRP_LIB:-none}"
+            echo "fdt: ${FDT_LIB:-none}"
+            printf 'module archive: %s\n' "${EXTRA_LIBS[@]}"
+
+            "$CC" -shared -fPIC \
+              --target="$OHOS_TARGET_TRIPLE" --sysroot="$SYSROOT" -fuse-ld=lld \
+              -o "$GITHUB_WORKSPACE/dist/libqemu-system-$GUEST.so" \
+              -Wl,--whole-archive "$ARCHIVE" -Wl,--no-whole-archive \
+              -L"$DEPS/lib" -L"$SDL_LIBDIR" \
+              ${SLIRP_LIB:-} \
+              ${FDT_LIB:-} \
+              -Wl,--start-group \
+              "${EXTRA_LIBS[@]}" \
+              -lglib-2.0 -lgobject-2.0 -lgio-2.0 -lgmodule-2.0 \
+              -lpixman-1 -lpcre2-8 -lffi \
+              -lspice-server -lvirglrenderer -lepoxy -ldrm \
+              -ljpeg -lssl -lcrypto -lsdl2 \
+              -Wl,--end-group \
+              "$NDK/llvm/lib/$ABI_TRIPLE/libc++.a" \
+              "$NDK/llvm/lib/$ABI_TRIPLE/libc++abi.a" \
+              "$NDK/llvm/lib/$ABI_TRIPLE/libunwind.a" \
+              -lEGL -lGLESv3 -lz -lm -lpthread -ldl \
+              -Wl,--allow-shlib-undefined \
+              -Wl,--no-undefined \
+              -Wl,-soname,libqemu-system-$GUEST.so
 
             file "$GITHUB_WORKSPACE/dist/libqemu-system-$GUEST.so"
             "$NDK/llvm/bin/llvm-nm" -D "$GITHUB_WORKSPACE/dist/libqemu-system-$GUEST.so" \
