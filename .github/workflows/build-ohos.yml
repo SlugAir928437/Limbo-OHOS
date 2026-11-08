@@ -765,9 +765,14 @@ jobs:
           # 这里显式构建这些归档再链入，否则 .so 会残留大量未定义内部符号，
           # dlopen 时 BIND_NOW 会直接失败。monitor.c 属于 qmp_ss（libqmp.a）。
           MODULE_ARCHIVES=(
-            libqom.a libqemuutil.a libevent-loop-base.a
+            libqom.a libevent-loop-base.a
             libauthz.a libcrypto.a libio.a libmigration.a
             libblock.a libblockdev.a libqmp.a libchardev.a libhwcore.a libqemuaudio.a
+            # libqemuutil.a 里还打包了 stubs/*.o（monitor-core、graph-lock、
+            # os-posix、blockdev 等空实现），必须排在最后：真实实现先由前面的
+            # 模块归档定义，stub 成员就不会被拉进来；否则会与 monitor.c /
+            # blockdev.c / block/graph-lock.c 撞重复符号。
+            libqemuutil.a
           )
           ninja -C "$BUILD_DIR" \
             libqemu-x86_64-softmmu.a libqemu-aarch64-softmmu.a \
