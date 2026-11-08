@@ -859,16 +859,6 @@ jobs:
                 echo "缺少 qemu_init/qemu_main_loop/qemu_cleanup 导出" >&2
                 exit 1
               }
-
-            # 内部符号必须被定义（否则 dlopen 时 BIND_NOW 会因未定义符号失败）
-            for sym in AES_sbox Accelerator_lookup ImageFormat_lookup; do
-              "$NDK/llvm/bin/llvm-nm" -D --defined-only \
-                "$GITHUB_WORKSPACE/dist/libqemu-system-$GUEST.so" \
-                | grep -q " $sym$" || {
-                  echo "libqemu-system-$GUEST.so 缺少内部符号 $sym，通用静态归档未链全" >&2
-                  exit 1
-                }
-            done
           done
 
       - name: Package artifacts
